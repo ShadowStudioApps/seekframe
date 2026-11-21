@@ -60,10 +60,12 @@ en.FFmpegFresh=ffmpeg was just installed. If Seekframe shows "ffmpeg (missing)",
 ar.FFmpegFresh=ffmpeg انتصب هسه. إذا Seekframe طلّع "ffmpeg (missing)"، سوّي تسجيل خروج ودخول (أو ريستارت) مرة وحدة.
 
 [Tasks]
+; 3.27: never in a silent install (/SILENT, /VERYSILENT, winget, the in-app update): the winget console waits for the
+;   user to accept terms and "|| pause" for a key, so an unattended install never finished (winget-pkgs validation failed).
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 Name: "startmenuicon"; Description: "{cm:StartMenuIcon}"; GroupDescription: "{cm:AdditionalIcons}"
-Name: "chrome"; Description: "{cm:NeedChrome}"; GroupDescription: "{cm:Needed}"; Check: NeedChrome
-Name: "ffmpeg"; Description: "{cm:NeedFFmpeg}"; GroupDescription: "{cm:Needed}"; Check: NeedFFmpeg
+Name: "chrome"; Description: "{cm:NeedChrome}"; GroupDescription: "{cm:Needed}"; Check: NeedChrome and not WizardSilent
+Name: "ffmpeg"; Description: "{cm:NeedFFmpeg}"; GroupDescription: "{cm:Needed}"; Check: NeedFFmpeg and not WizardSilent
 
 [Files]
 Source: "..\dist\Seekframe.exe"; DestDir: "{app}"; Flags: ignoreversion

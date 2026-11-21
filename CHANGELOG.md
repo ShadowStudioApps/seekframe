@@ -3,6 +3,11 @@
 Every release is on the [Releases](../../releases) page with its `Seekframe-<version>-Setup.exe`. Installed copies update
 themselves: Seekframe shows **Update to vX.Y** when a new release is out.
 
+## 3.27
+- **Silent installs finish on their own**: `Seekframe-X.Y-Setup.exe /SILENT` (and installs through winget) no longer
+  try to install Chrome / ffmpeg in a console window that waits for an answer. A normal (double-click) install still offers
+  them. Through winget, ffmpeg comes as a dependency.
+
 ## 3.26
 - Seekframe now lives at **github.com/ShadowStudioApps/seekframe**, the home of **Shadow Studio** (the studio that makes
   Seekframe and the apps that come after it). Old links and the update check are redirected, so nothing changes for you.

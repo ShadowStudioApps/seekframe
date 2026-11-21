@@ -1,5 +1,5 @@
 """Shadow rendering engine: HTML scene -> frames -> audio -> MP4. No GUI code here."""
-VERSION = "3.26"
+VERSION = "3.27"
 import base64, collections, functools, urllib.parse, http.server, os, shutil, subprocess, sys, tempfile, threading, time, wave, array
 
 NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
