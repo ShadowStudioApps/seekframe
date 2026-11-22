@@ -9,6 +9,8 @@ import qc
 import subtitles
 import updater
 import assistant
+import ai_clients   # 3.32: AI apps that can use Seekframe (MCP), connect / disconnect
+import ai_tasks
 import video_song as vsong
 import i18n
 from i18n import t as tr   # 3.20: the UI language (locales/<code>.json); keys and the log stay English
@@ -564,7 +566,9 @@ class App(Root):
         self._cur_left = None  # (path, seconds left) of the file rendering now
         self.check_thread = None; self.check_results = []; self.check_kw = {}   # Check frames (check_kw: tests pass Chrome options)
         self.cfg_ai = dict(cfg.get('ai') or {})
-        assistant.AUTH_MODE = 'api_key' if self.cfg_ai.get('auth') == 'api_key' else 'subscription'   # 3.30 Settings > AI account   # New video (AI): style, length, voice, dir, voice_python (3.19)
+        assistant.AUTH_MODE = 'api_key' if self.cfg_ai.get('auth') == 'api_key' else 'subscription'
+        ai_tasks.ENGINE = self.cfg_ai.get('engine') if self.cfg_ai.get('engine') in ai_tasks.ENGINES else 'claude'   # 3.32
+        self._using_prev = None   # 3.32: AI apps using Seekframe at the last check (a new one -> notification)   # 3.30 Settings > AI account   # New video (AI): style, length, voice, dir, voice_python (3.19)
         self.row_problems = {}   # path -> what went wrong last (render error + log, QC, Check frames): the AI window starts from it
         f = cfg.get('format'); self.fmt = tk.StringVar(value=f if f in FORMAT_CHOICES else '16:9 (YouTube)')
         c = OLD_CAPTURE_LABELS.get(cfg.get('capture'), cfg.get('capture')); self.capture = tk.StringVar(value=c if c in CAPTURES else next(iter(CAPTURES)))
@@ -581,7 +585,7 @@ class App(Root):
         self.build()
         self.apply_theme(refresh=True)   # sv-ttk set before the widgets exist leaves wrong fonts/colours on the first pass
         self.check()
-        self.check_mcp()
+        self._clients_id = self.after(1500, self._poll_clients)   # 3.32: AI connections, then every 45 s
         self.update_idletasks()   # size the window to its content (fonts scale with the display DPI), the tallest page counts
         rw, rh = self.winfo_reqwidth(), self.winfo_reqheight()
         # (the pages share one grid cell, so the window already asks for the tallest one)
@@ -589,6 +593,7 @@ class App(Root):
         self.minsize(rw, rh); self.geometry(f'{w}x{h}')
         self._poll_id = self.after(150, self.poll)
         self.update_rel = None; self.update_busy = False; self.update_checking = False
+        self.update_seen = cfg.get('update_seen')   # 3.31: the version the Windows notification was shown for
         self.after(2500, self.start_update_check)
 
     # ------------------------------------------------------------------ updates (GitHub Releases, see updater.py)
@@ -615,7 +620,15 @@ class App(Root):
     def show_update(self, rel, manual=False):
         self.update_checking = False; self.update_rel = rel
         self.update_btn.config(text=tr('Update to v{0}', rel['version']), style='Accent.TButton', state='normal')
+        # 3.31 notice: a bar in the window, and once per new version a Windows notification
+        self.update_lbl.config(text=tr('Seekframe v{0} is available (you have v{1}).', rel['version'], rc.VERSION))
+        if not self.update_bar.winfo_manager(): self.update_bar.pack(fill='x', padx=14, pady=(0, 6), before=self.page_box)
+        if not manual and self.update_seen != rel['version']:
+            self.update_seen = rel['version']; self.save()
+            notify(tr('Seekframe update'), tr('Version {0} is ready to install. Open Seekframe and press Update now.', rel['version']))
         if manual: self.do_update()
+    def hide_update_bar(self):
+        self.update_bar.pack_forget()
     def update_none(self, manual, info):
         self.update_checking = False; self.update_btn.config(text=tr('Check for updates'), state='normal')
         if not manual: return
@@ -636,7 +649,7 @@ class App(Root):
         if not messagebox.askyesno(tr('Update'), f'Seekframe v{rel["version"]} is available (you have v{rc.VERSION}).\n\n'
                                    + (notes + '\n\n' if notes else '') + 'Download and install it now? Seekframe closes and opens again by itself.'):
             return
-        self.update_busy = True; self.update_btn.config(state='disabled'); self.go.config(state='disabled')
+        self.update_busy = True; self.update_btn.config(state='disabled'); self.update_now.config(state='disabled'); self.go.config(state='disabled')
         dest = os.path.join(os.environ.get('TEMP') or os.path.expanduser('~'), 'Shadow-update')
         for old in glob.glob(os.path.join(dest, '*')):   # setups from earlier updates
             try: os.remove(old)
@@ -655,7 +668,7 @@ class App(Root):
             self.update_failed(str(e)); return
         self.on_close()
     def update_failed(self, msg):
-        self.update_busy = False; self.update_btn.config(state='normal'); self.go.config(state='normal')
+        self.update_busy = False; self.update_btn.config(state='normal'); self.update_now.config(state='normal'); self.go.config(state='normal')
         self.status.config(text=tr('Update failed')); messagebox.showerror(tr('Update'), tr('{0}\n\nYou can also download the setup from:\n{1}', msg, self.update_rel.get('page') or updater.REPO))
 
     # ------------------------------------------------------------------ layout (3.28: sidebar + pages)
@@ -686,8 +699,7 @@ class App(Root):
                                ('ai', 'AI tools', self.open_ai), ('youtube', 'YouTube...', self.open_youtube_dialog),
                                ('project', 'Project', self.project_menu), ('assistant', 'Assistant', self.toggle_assistant)):
             self._nav_item(key, tr(text), cmd)
-        self.update_btn = ttk.Button(self.side, text=tr('Check for updates'), command=self.on_update_btn)
-        self.update_btn.pack(side='bottom', fill='x', padx=10, pady=(6, 14))
+        self._studio_mark(k)   # 3.31: Shadow Studio at the very bottom
         for key, text in (('about', 'About'), ('settings', 'Settings')):
             self._nav_item(key, tr(text), lambda k_=key: self.show_page(k_), side='bottom')
         self.ai_btn = self.nav['assistant']; self.proj_btn = self.nav['project']; self.new_btn = self.nav['new']
@@ -702,6 +714,14 @@ class App(Root):
         self.theme_btn = ttk.Button(hdr, width=9, command=self.toggle_theme); self.theme_btn.pack(side='right')
         self._top = hdr
         self._theme_text()
+        # 3.31: a new version shows this bar under the header (packed by show_update, hidden by Later)
+        self.update_bar = ttk.Frame(self.body, padding=(10, 6), style='Card.TFrame')
+        self.update_lbl = ttk.Label(self.update_bar, text=''); self.update_lbl.pack(side='left')
+        ttk.Button(self.update_bar, text=tr('Later'), command=self.hide_update_bar).pack(side='right')
+        ttk.Button(self.update_bar, text=tr("What's new"), command=lambda: webbrowser.open((self.update_rel or {}).get('page')
+                   or f'https://github.com/{updater.REPO}/releases/latest')).pack(side='right', padx=6)
+        self.update_now = ttk.Button(self.update_bar, text=tr('Update now'), style='Accent.TButton', command=self.do_update)
+        self.update_now.pack(side='right')
         # the pages sit on top of each other in one grid cell; switching only raises one (no re-layout: 117 ms -> ~1 ms)
         self.page_box = ttk.Frame(self.body); self.page_box.pack(fill='both', expand=True)
         self.page_box.rowconfigure(0, weight=1); self.page_box.columnconfigure(0, weight=1)
@@ -741,17 +761,17 @@ class App(Root):
             bt.columnconfigure(i, weight=1, uniform='b')
         self.check_btn = btns['Check frames']
         self.narr_btn = btns['Narration...']; self.narr_btn.config(state='disabled')   # enabled when one row is selected that can take narration
-        # the render options, right on the Queue page (3.30: one click away, not inside Settings)
-        op = ttk.LabelFrame(qp, text=tr('Options'), padding=(10, 6)); op.pack(fill='x', padx=P)
-        rows = (('Quality', self.preset, list(rc.PRESETS)), ('Format', self.fmt, FORMAT_CHOICES), ('Sound', self.snd, SOUNDS),
-                ('Capture', self.capture, list(CAPTURES)), ('Blender', self.bl_engine, BLENDER_ENGINES))
-        for i, (lbl, var, vals) in enumerate(rows):
-            r, c = i % 3, (i // 3) * 2
-            ttk.Label(op, text=tr(lbl)).grid(row=r, column=c, sticky='w', pady=2, padx=(0 if c == 0 else 18, 0))
-            i18n.Combo(op, var, vals, width=30).grid(row=r, column=c + 1, sticky='w', padx=8, pady=2)   # shows translations, keeps keys
-        ttk.Label(op, textvariable=self.snd_file, foreground='#888').grid(row=2, column=2, columnspan=2, sticky='w', padx=(18, 0))
-        self.snd.trace_add('write', self.on_sound)
-        self.fmt.trace_add('write', lambda *_: self.refresh_audio())   # the Format column follows the Format setting
+        # the render options, right on the Queue page (3.30: one click away, not inside Settings)
+        op = ttk.LabelFrame(qp, text=tr('Options'), padding=(10, 6)); op.pack(fill='x', padx=P)
+        rows = (('Quality', self.preset, list(rc.PRESETS)), ('Format', self.fmt, FORMAT_CHOICES), ('Sound', self.snd, SOUNDS),
+                ('Capture', self.capture, list(CAPTURES)), ('Blender', self.bl_engine, BLENDER_ENGINES))
+        for i, (lbl, var, vals) in enumerate(rows):
+            r, c = i % 3, (i // 3) * 2
+            ttk.Label(op, text=tr(lbl)).grid(row=r, column=c, sticky='w', pady=2, padx=(0 if c == 0 else 18, 0))
+            i18n.Combo(op, var, vals, width=30).grid(row=r, column=c + 1, sticky='w', padx=8, pady=2)   # shows translations, keeps keys
+        ttk.Label(op, textvariable=self.snd_file, foreground='#888').grid(row=2, column=2, columnspan=2, sticky='w', padx=(18, 0))
+        self.snd.trace_add('write', self.on_sound)
+        self.fmt.trace_add('write', lambda *_: self.refresh_audio())   # the Format column follows the Format setting
         pr = ttk.Frame(qp); pr.pack(fill='x', padx=P, pady=(10, 0))
         self.bar = ttk.Progressbar(pr, maximum=100); self.bar.pack(side='left', fill='x', expand=True)
         self.pct = ttk.Label(pr, text='0%', width=16, anchor='e'); self.pct.pack(side='right', padx=(10, 0))
@@ -782,10 +802,14 @@ class App(Root):
         ttk.Label(op, text=tr('Auto: songs -> Music, the rest -> Video (Short + video share one folder)'), foreground='#888').grid(row=1, column=2, sticky='w')
         ttk.Button(op, text=tr('New folder...'), command=self.add_main_folder).grid(row=1, column=3, sticky='e')
         cl = ttk.Frame(op); cl.grid(row=2, column=1, columnspan=3, sticky='w', padx=10, pady=(6, 0))
-        self.cloud_btns = []
-        for label, path in cloud_folders():
-            b = ttk.Button(cl, text=label, command=lambda p=path: self.use_storage(p)); b.pack(side='left', padx=(0, 6)); self.cloud_btns.append(b)
-        self.storage_btn = ttk.Button(cl, text=tr('Check access'), command=self.check_storage); self.storage_btn.pack(side='left')
+        self.cloud_btns = []   # 3.31: every place, found or not (one not found asks for its folder)
+        places = storage_places() + [('Network drive (NAS)...', 'nas')]
+        for i, (label, path) in enumerate(places):
+            b = ttk.Button(cl, text=tr(label) if label in ('This PC', 'Network drive (NAS)...') else label,
+                           command=lambda l=label, p=path: self.use_storage(p, l))
+            b.grid(row=i // 4, column=i % 4, sticky='we', padx=(0, 6), pady=(0, 6)); self.cloud_btns.append(b)
+        self.storage_btn = ttk.Button(cl, text=tr('Check access'), style='Accent.TButton', command=self.check_storage)
+        self.storage_btn.grid(row=len(places) // 4, column=len(places) % 4, sticky='we', padx=(0, 6), pady=(0, 6))
         self.storage_lbl = ttk.Label(op, text=tr('A NAS works too: type its address, for example \\\\NAS\\Videos, or a mapped drive like Z:\\Videos.'),
                                      foreground='#888', wraplength=round(700 * k), justify='left')
         self.storage_lbl.grid(row=3, column=1, columnspan=3, sticky='w', padx=10, pady=(6, 0))
@@ -799,14 +823,32 @@ class App(Root):
         ttk.Button(env, text=tr('Install missing'), command=self.install_missing).pack(side='right')
         self.selftest_btn = ttk.Button(env, text=tr('Self-test'), command=self.run_selftest); self.selftest_btn.pack(side='right')
         ttk.Button(env, text=tr('Re-check'), command=self.check).pack(side='right', padx=6)
-        mc = ttk.LabelFrame(sp, text=tr('Claude connection (MCP)'), padding=10); mc.pack(fill='x', padx=P, pady=(0, 10))
+        # 3.32 AI connections: every AI app found on this PC with a tick box (connect Seekframe to it, MCP) and a light
+        # (green = connected, with "In use now" while it runs Seekframe); then which AI does Seekframe's own AI buttons
+        mc = ttk.LabelFrame(sp, text=tr('AI connections'), padding=10); mc.pack(fill='x', padx=P, pady=(0, 10))
         mrow = ttk.Frame(mc); mrow.pack(fill='x')
-        self.mcp_lbls = {}
-        for key, text in (('claude', 'Claude Code'), ('registered', 'Seekframe set up for Claude'), ('running', 'Connected now')):
-            dot = ttk.Label(mrow, text='●', foreground='#888'); dot.pack(side='left'); txt = ttk.Label(mrow, text=tr(text)); txt.pack(side='left', padx=(3, 14))
-            self.mcp_lbls[key] = (dot, txt)
+        ttk.Label(mrow, text=tr('Tick an AI app to let it use Seekframe (render, check, upload).'), foreground='#888').pack(side='left')
         ttk.Button(mrow, text=tr('How to connect'), command=lambda: webbrowser.open(f'https://github.com/{updater.REPO}/blob/main/docs/MCP.md')).pack(side='right')
         ttk.Button(mrow, text=tr('Re-check'), command=self.check_mcp).pack(side='right', padx=6)
+        self.cli_box = ttk.Frame(mc); self.cli_box.pack(fill='x', pady=(6, 0))
+        self.cli_rows = {}
+        for i, c in enumerate(ai_clients.CLIENTS):
+            var = tk.BooleanVar(value=False)
+            dot = ttk.Label(self.cli_box, text='●', foreground='#888')
+            cb = ttk.Checkbutton(self.cli_box, text=c.name, variable=var, command=lambda k=c.key: self.on_client(k))
+            st = ttk.Label(self.cli_box, text='', foreground='#888')
+            dot.grid(row=i, column=0, sticky='w'); cb.grid(row=i, column=1, sticky='w', padx=(4, 18), pady=1); st.grid(row=i, column=2, sticky='w')
+            self.cli_rows[c.key] = dict(var=var, dot=dot, cb=cb, st=st)
+        self.cli_missing = ttk.Label(mc, text='', foreground='#888', wraplength=round(700 * k), justify='left'); self.cli_missing.pack(anchor='w', pady=(4, 0))
+        er = ttk.Frame(mc); er.pack(fill='x', pady=(8, 0))
+        ttk.Label(er, text=tr("AI for Seekframe's own AI buttons:")).pack(side='left')
+        self.engine = tk.StringVar(value=ai_tasks.ENGINE)
+        self.engine_btns = {}
+        for key_, name in ai_tasks.ENGINES.items():
+            b = ttk.Radiobutton(er, text=name, value=key_, variable=self.engine, command=self.on_engine); b.pack(side='left', padx=(12, 0))
+            self.engine_btns[key_] = b
+        self.engine_lbl = ttk.Label(mc, text='', foreground='#888', wraplength=round(700 * k), justify='left'); self.engine_lbl.pack(anchor='w', pady=(4, 0))
+        self._engine_text()
         ac = ttk.LabelFrame(sp, text=tr('AI account'), padding=10); ac.pack(fill='x', padx=P, pady=(0, 10))
         self.ai_auth = tk.StringVar(value='api_key' if self.cfg_ai.get('auth') == 'api_key' else 'subscription')
         ttk.Radiobutton(ac, text=tr('My Claude subscription through Claude Code (recommended, nothing paid per use)'), value='subscription',
@@ -858,7 +900,8 @@ class App(Root):
                                       ("What's new", base + '/blob/main/CHANGELOG.md'), ('Report a problem', base + '/issues/new/choose'),
                                       ('Privacy policy', base + '/blob/main/docs/PRIVACY.md'), ('Shadow Studio', 'https://github.com/' + updater.REPO.split('/')[0]))):
             ttk.Button(lk, text=tr(t), command=lambda u=url: webbrowser.open(u)).grid(row=i // 3, column=i % 3, sticky='we', padx=(0, 8), pady=(0, 8))
-        ttk.Button(box, text=tr('Check for updates'), command=self.on_update_btn).pack(anchor='w', pady=(8, 0))
+        self.update_btn = ttk.Button(box, text=tr('Check for updates'), command=self.on_update_btn)   # 3.31: only here (not in the sidebar)
+        self.update_btn.pack(anchor='w', pady=(8, 0))
         ttk.Label(box, text=tr('MIT license. Made with Python, Playwright, ffmpeg and sv-ttk; the AI features use your own Claude Code.'),
                   foreground='#888', wraplength=wl, justify='left').pack(anchor='w', pady=(18, 0))
 
@@ -888,6 +931,39 @@ class App(Root):
     def _nav_selected(self, key):
         return key == self.page or (key == 'assistant' and self.ai_open)
 
+    def _studio_mark(self, k):
+        """Bottom of the sidebar: the Shadow Studio logo + name, quiet (muted, small, spaced letters); a click opens the
+        studio's GitHub page. A thin line above it separates it from Settings / About."""
+        box = tk.Frame(self.side, cursor='hand2'); box.pack(side='bottom', fill='x', padx=14, pady=(4, 14))
+        tk.Frame(self.side, height=1).pack(side='bottom', fill='x', padx=14, pady=(8, 6))   # the line (coloured in side_colors)
+        self.studio_logo = None
+        try:
+            from PIL import Image
+            import base64, io
+            for b in (getattr(sys, '_MEIPASS', None), os.path.dirname(os.path.abspath(__file__))):
+                lp = b and os.path.join(b, 'assets', 'shadow_studio.png')
+                if lp and os.path.isfile(lp):
+                    with Image.open(lp) as im0: im = im0.convert('RGBA').resize((round(26 * k),) * 2, Image.LANCZOS)
+                    buf = io.BytesIO(); im.save(buf, 'PNG')
+                    self.studio_logo = tk.PhotoImage(master=self, data=base64.b64encode(buf.getvalue()).decode('ascii'), format='png'); break
+        except Exception:
+            log.exception('studio logo')
+        parts = []
+        if self.studio_logo: parts.append(tk.Label(box, image=self.studio_logo, cursor='hand2'))
+        txt = tk.Frame(box, cursor='hand2')
+        self.studio_lbl = tk.Label(txt, text='S H A D O W', font=('Segoe UI Semibold', 9), anchor='w', cursor='hand2')
+        self.studio_sub = tk.Label(txt, text='S T U D I O', font=('Segoe UI', 7), anchor='w', cursor='hand2')
+        self.studio_lbl.pack(fill='x'); self.studio_sub.pack(fill='x')
+        parts += [txt, self.studio_lbl, self.studio_sub]
+        if self.studio_logo: parts[0].pack(side='left', padx=(0, 9))
+        txt.pack(side='left')
+        url = 'https://github.com/' + updater.REPO.split('/')[0]
+        for w in [box] + parts:
+            w.bind('<Button-1>', lambda e: webbrowser.open(url))
+            w.bind('<Enter>', lambda e: self.studio_lbl.config(foreground=self.SIDE_COLORS['dark' if self.theme == 'dark' else 'light']['fg_sel']))
+            w.bind('<Leave>', lambda e: self.side_colors())
+        self.studio_box = box
+
     def _nav_hover(self, row, on):
         c = self.SIDE_COLORS['dark' if self.theme == 'dark' else 'light']
         bg = c['sel'] if self._nav_selected(row.key) else (c['hover'] if on else c['bg'])
@@ -903,6 +979,10 @@ class App(Root):
                 w.config(background=c['bg'])
                 for x in w.winfo_children(): x.config(background=c['bg'])
         self.side_title.config(foreground=c['fg_sel']); self.side_ver.config(foreground=c['muted'])
+        if hasattr(self, 'studio_box'):   # the Shadow Studio mark: line in the theme's line colour, quiet text
+            for w in self.side.winfo_children():
+                if isinstance(w, tk.Frame) and not hasattr(w, 'key') and int(w.cget('height') or 0) == 1: w.config(background=c['line'])
+            self.studio_lbl.config(foreground=c['fg'], background=c['bg']); self.studio_sub.config(foreground=c['muted'], background=c['bg'])
         for row in self.nav.values():
             sel = self._nav_selected(row.key); bg = c['sel'] if sel else c['bg']
             for w in row.parts: w.config(background=bg)
@@ -924,9 +1004,17 @@ class App(Root):
         self.save()
 
     # ------------------------------------------------------------------ Settings: storage, Claude (MCP), AI account (3.30)
-    def use_storage(self, path):
-        """A cloud-folder button: save videos in <cloud>\\Seekframe (made on the first render), then check it."""
-        self.out_dir.set(os.path.join(path, 'Seekframe')); self.check_storage()
+    def use_storage(self, path, label='', pick=None):
+        """A place button: save videos in <place>\\Seekframe (made on the first render), then check it. A cloud app that
+        was not found (path None) or the NAS button asks for the folder (pick = a test's stand-in for the folder picker)."""
+        if path in (None, 'nas'):
+            msg = (tr('Pick the NAS folder (Network in the list, or a mapped drive like Z:).') if path == 'nas'
+                   else tr('{0} was not found on this PC. Pick its folder (install its desktop app first if needed).', label))
+            self.storage_lbl.config(text=msg, foreground='#d29922')
+            got = (pick or filedialog.askdirectory)(title=msg)
+            if not got: return None
+            self.out_dir.set(os.path.normpath(got)); return self.check_storage()
+        self.out_dir.set(os.path.join(path, 'Seekframe')); return self.check_storage()
 
     def check_storage(self):
         d = self.out_dir.get().strip()
@@ -939,24 +1027,94 @@ class App(Root):
             self.storage_lbl.config(text=tr('Seekframe cannot save there: {0}', r['message']), foreground='#f85149')
         return r
 
-    def check_mcp(self, wait=False):
-        """The Claude (MCP) lights: in a thread (counting the server processes takes a second)."""
+    def check_mcp(self, wait=False, status=None):
+        """The AI connections lights (3.32): in a thread (the process list takes a second). Runs again every 45 s, so an
+        AI app that starts using Seekframe shows up (and gets one Windows notification)."""
         def run():
-            try: st = mcp_status()
-            except Exception: log.exception('mcp status'); st = dict(claude=False, registered=False, running=0)
+            try: st = (status or ai_clients.status)()
+            except Exception: log.exception('ai clients'); st = []
             self.q.put(('mcp', st))
         if wait: run(); return None
         threading.Thread(target=run, daemon=True).start()
 
-    def show_mcp(self, st):
-        if not hasattr(self, 'mcp_lbls'): return
-        green, red, grey = '#3fb950', '#f85149', '#888'
-        for key, ok in (('claude', st.get('claude')), ('registered', st.get('registered')), ('running', st.get('running', 0) > 0)):
-            dot, txt = self.mcp_lbls[key]
-            dot.config(foreground=green if ok else (grey if key == 'running' else red))
-        n = st.get('running', 0)
-        self.mcp_lbls['running'][1].config(text=tr('Connected now ({0})', n) if n else tr('Not connected now'))
+    def _poll_clients(self):
+        self.check_mcp(); self._clients_id = self.after(45000, self._poll_clients)
+
+    def show_mcp(self, st, toast=None):
+        """Paint the AI connections rows from ai_clients.status(): green light + ticked = connected, 'In use now (n)' while
+        it runs Seekframe; apps not on this PC are listed in one grey line instead of a row."""
+        if not hasattr(self, 'cli_rows'): return
+        toast = toast or notify
+        green, grey = '#3fb950', '#888'
+        missing, other = [], 0
+        using = {}
+        for s in st:
+            if s['key'] == 'other': other = s['using']; continue
+            row = self.cli_rows.get(s['key'])
+            if not row: continue
+            using[s['key']] = s['using']
+            show = s['installed'] or s['connected']
+            for w in (row['dot'], row['cb'], row['st']):
+                if show: w.grid()
+                else: w.grid_remove()
+            if not show: missing.append(s['name']); continue
+            row['var'].set(bool(s['connected'])); row['cb'].state(['!disabled'])
+            row['dot'].config(foreground=green if s['connected'] else grey)
+            row['st'].config(text=tr('In use now ({0})', s['using']) if s['using'] else (tr('Connected') if s['connected'] else tr('Not connected')),
+                             foreground=green if s['using'] else grey)
+        self.cli_missing.config(text=(tr('Not found on this PC: {0}', ', '.join(missing)) if missing else '')
+                                + (('   ' if missing else '') + tr('Another app is using Seekframe now ({0}).', other) if other else ''))
+        if self._using_prev is not None:   # the first check only sets the baseline (no notification at start)
+            for key_, n in using.items():
+                if n and not self._using_prev.get(key_):
+                    toast(tr('Seekframe connected'), tr('{0} is now using Seekframe.', ai_clients.BY_KEY[key_].name))
+        self._using_prev = using
         self.mcp_state = st
+
+    def on_client(self, key, wait=False, toast=None, **kw):
+        """A tick box: connect Seekframe to that AI app (or remove it), in a thread; then a notification and a re-check."""
+        row = self.cli_rows[key]; want = row['var'].get(); name = ai_clients.BY_KEY[key].name
+        row['cb'].state(['disabled']); row['st'].config(text=tr('Connecting...') if want else tr('Removing...'), foreground='#888')
+        def run():
+            try:
+                ok, msg = (ai_clients.connect(key, ai_clients.server_command(), **kw) if want else ai_clients.disconnect(key, **kw))
+            except Exception as e: ok, msg = False, str(e)
+            self.q.put(('client_done', key, want, ok, msg, toast))
+        if wait: run(); return None
+        threading.Thread(target=run, daemon=True).start()
+
+    def client_done(self, key, want, ok, msg, toast=None):
+        row = self.cli_rows[key]; name = ai_clients.BY_KEY[key].name
+        row['cb'].state(['!disabled'])
+        if not ok:
+            row['var'].set(not want)
+            row['st'].config(text=tr('Could not change {0}: {1}', name, msg), foreground='#f85149'); return
+        row['var'].set(want); row['dot'].config(foreground='#3fb950' if want else '#888')
+        if want:
+            row['st'].config(text=tr('Connected. Restart {0} if it is open.', name), foreground='#3fb950')
+            (toast or notify)(tr('Seekframe connected'), tr('{0} can use Seekframe now. Restart {0} if it is open.', name))
+        else:
+            row['st'].config(text=tr('Not connected'), foreground='#888')
+        log.info('ai client %s %s', key, 'connected' if want else 'removed')
+
+    def _engine_text(self):
+        name = ai_tasks.ENGINES[ai_tasks.ENGINE]
+        self.engine_lbl.config(text=tr('Fix the scene, YouTube text and New video use {0}. The Assistant chat always uses Claude Code.', name), foreground='#888')
+
+    def on_engine(self, ready=None, toast=None):
+        """The AI for Seekframe's own AI buttons: checked first (installed + signed in), then saved, with a notification."""
+        want = self.engine.get()
+        if want == 'gemini': ok, msg = (ready or ai_tasks.gemini_ready)(ai_tasks.find_gemini())
+        else: ok, msg = (ready or assistant.check_ready)(assistant.find_claude())
+        if not ok:
+            self.engine.set(ai_tasks.ENGINE)
+            self.engine_lbl.config(text=tr('{0} is not ready: {1}', ai_tasks.ENGINES[want], msg), foreground='#f85149'); return False
+        changed = want != ai_tasks.ENGINE
+        ai_tasks.ENGINE = want; self.cfg_ai['engine'] = want; self.save(); self._engine_text()
+        self.engine_lbl.config(foreground='#3fb950')
+        if changed:
+            (toast or notify)(tr('AI connected'), tr("{0} now does Seekframe's AI jobs.", ai_tasks.ENGINES[want]))
+        return True
 
     def _key_status(self):
         key = assistant.load_api_key()
@@ -1352,13 +1510,14 @@ class App(Root):
                   'skip_done': self.skip_done.get(), 'notify': self.notify.get(),
                   'folder': self.folder_choice.get(), 'folders': self.folders,
                   'assistant_open': self.ai_open, 'assistant_dir': self.ai_dir_choice, 'sidebar': getattr(self, 'side_open', True), 'ai': getattr(self, 'cfg_ai', {}),
-                  'language': getattr(self, 'lang_choice', 'auto'),
+                  'language': getattr(self, 'lang_choice', 'auto'), 'update_seen': getattr(self, 'update_seen', None),
                   'capture': self.capture.get(), 'blender_engine': self.bl_engine.get(), 'sound': self.snd.get(), 'sound_file': self.snd_file.get(), **({'theme': self.theme_choice} if self.theme_choice else {})})
     def on_close(self):
         self.do_cancel(); self.save()
         if self.ai: self.ai.close()   # ends the assistant's claude process (and a render it started)
-        try: self.after_cancel(self._poll_id)
-        except Exception: pass
+        for i in (self._poll_id, getattr(self, '_clients_id', None)):
+            try: self.after_cancel(i)
+            except Exception: pass
         self.destroy()
 
     # ------------------------------------------------------------------ render
@@ -1549,6 +1708,8 @@ class App(Root):
                     self.show_check(m[1], m[2])
                 elif m[0] == 'mcp':
                     self.show_mcp(m[1])
+                elif m[0] == 'client_done':
+                    self.client_done(*m[1:])
                 elif m[0] == 'check_status':
                     self.status.config(text=m[1])
                 elif m[0] == 'check_end':
@@ -1640,15 +1801,24 @@ class App(Root):
     def toggle_assistant(self):
         self.ai_open = not self.ai_open
         self.update_idletasks(); w0 = self.winfo_width()
+        # 3.31: the panel takes its room from the pages (no window resize = no squeezed table while it moves);
+        # the window only grows when it is too narrow for both, and gives that back on close
         if self.ai_open:
             self._ai_dir_label()
+            # room needed = what the window asks for now + the panel; grow FIRST, then pack the panel (packing first
+            # squeezed the table for a moment, then the window caught up: the stutter in the owner's recording)
+            self.update_idletasks()
+            need = max(self.winfo_reqwidth(), self.body.winfo_reqwidth() + (self.side.winfo_reqwidth() if self.side.winfo_manager() else 0)) \
+                + self.ai_frame.winfo_reqwidth() + 14
+            self._ai_grew = max(0, need - w0) if self.wm_state() != 'zoomed' else 0
+            if self._ai_grew: self.geometry(f'{w0 + self._ai_grew}x{self.winfo_height()}'); self.update_idletasks()
             self.ai_frame.pack(side='right', fill='both', padx=(0, 14), pady=14, before=self.body)
-            self.update_idletasks(); add = self.ai_frame.winfo_reqwidth() + 14
-            self.geometry(f'{w0 + add}x{self.winfo_height()}'); self.ai_in.focus_set()
+            self.ai_in.focus_set()
         else:
-            add = self.ai_frame.winfo_width() + 14
             self.ai_frame.pack_forget()
-            self.geometry(f'{max(w0 - add, self.winfo_reqwidth())}x{self.winfo_height()}')
+            grew = getattr(self, '_ai_grew', 0); self._ai_grew = 0
+            if grew and self.wm_state() != 'zoomed':
+                self.update_idletasks(); self.geometry(f'{max(w0 - grew, self.winfo_reqwidth())}x{self.winfo_height()}')
         self.side_colors()   # the Assistant row is marked while the panel is open
         self.save()
 
@@ -1859,72 +2029,84 @@ class App(Root):
         except Exception: log.exception('check window'); return None
 
 
-def cloud_folders(env=None):
-    """Synced cloud folders found on this PC: [(label, path)]. OneDrive (personal / work), Google Drive (My Drive), Dropbox,
-    iCloud Drive. Only folders that exist; nothing is created."""
-    env = os.environ if env is None else env
-    home = env.get('USERPROFILE') or os.path.expanduser('~'); out = []
-    def add(label, p):
-        if p and os.path.isdir(p) and all(os.path.normcase(p) != os.path.normcase(q) for _, q in out): out.append((label, p))
-    add('OneDrive', env.get('OneDrive')); add('OneDrive (work)', env.get('OneDriveCommercial'))
-    for d in [home] + [f'{c}:\\' for c in 'GHIJ']:
-        add('Google Drive', os.path.join(d, 'My Drive')); add('Google Drive', os.path.join(d, 'Google Drive', 'My Drive'))
-    try:
-        info = os.path.join(env.get('LOCALAPPDATA', ''), 'Dropbox', 'info.json')
-        if os.path.isfile(info):
-            with open(info, encoding='utf-8') as f: d = json.load(f)
-            for v in d.values():
-                if isinstance(v, dict) and v.get('path'): add('Dropbox', v['path'])
-    except Exception:
-        pass
-    add('Dropbox', os.path.join(home, 'Dropbox')); add('iCloud Drive', os.path.join(home, 'iCloudDrive'))
-    return out
-
-def storage_kind(path):
-    """'network' for \\\\server\\share or a mapped network drive, 'cloud' inside a synced cloud folder, else 'local'."""
-    p = os.path.abspath(path or '')
-    if p.startswith('\\\\'): return 'network'
-    try:
-        import ctypes
-        if os.name == 'nt' and len(p) > 1 and p[1] == ':' and ctypes.windll.kernel32.GetDriveTypeW(p[:2] + '\\') == 4: return 'network'
-    except Exception:
-        pass
-    if any(os.path.normcase(p).startswith(os.path.normcase(c)) for _, c in cloud_folders()): return 'cloud'
-    return 'local'
-
-def storage_check(path):
-    """Can Seekframe write videos there? -> dict(ok, kind, free_gb, message). Writes and deletes one small test file."""
-    p = os.path.abspath(os.path.expanduser(path or ''))
-    kind = storage_kind(p)
-    try:
-        os.makedirs(p, exist_ok=True)
-        t = os.path.join(p, f'.seekframe_write_test_{uuid.uuid4().hex[:6]}')
-        with open(t, 'wb') as f: f.write(b'x' * 1024)
-        os.remove(t)
-        free = shutil.disk_usage(p).free / 1e9
-    except Exception as e:
-        return dict(ok=False, kind=kind, free_gb=None, message=f'{type(e).__name__}: {e}')
-    return dict(ok=True, kind=kind, free_gb=round(free, 1), message='')
-
-def mcp_status(claude_json=None, ps=None):
-    """Seekframe's connection for Claude (MCP): dict(claude=bool (Claude Code found), registered=bool (the 'shadow' server is
-    set up for Claude Code), running=int (MCP server processes alive now)). The process count uses one hidden PowerShell call."""
-    out = dict(claude=bool(assistant.find_claude()), registered=False, running=0)
-    try:
-        with open(claude_json or os.path.join(os.path.expanduser('~'), '.claude.json'), encoding='utf-8') as f:
-            out['registered'] = bool((json.load(f).get('mcpServers') or {}).get(assistant.SERVER))
-    except Exception:
-        pass
-    try:
-        r = (ps or subprocess.run)(['powershell', '-NoProfile', '-NonInteractive', '-Command',
-                                    "@(Get-CimInstance Win32_Process -Filter \"Name like 'python%'\" | Where-Object { $_.CommandLine -like '*mcp_server.py*' }).Count"],
-                                   capture_output=True, text=True, timeout=20, creationflags=rc.NOWIN)
-        out['running'] = int((r.stdout or '0').strip().splitlines()[-1])
-    except Exception:
-        pass
-    return out
-
-
+def cloud_folders(env=None):
+    """Synced cloud folders found on this PC: [(label, path)]. OneDrive (personal / work), Google Drive (My Drive), Dropbox,
+    iCloud Drive. Only folders that exist; nothing is created."""
+    env = os.environ if env is None else env
+    home = env.get('USERPROFILE') or os.path.expanduser('~'); out = []
+    def add(label, p):
+        if p and os.path.isdir(p) and all(os.path.normcase(p) != os.path.normcase(q) for _, q in out): out.append((label, p))
+    add('OneDrive', env.get('OneDrive')); add('OneDrive (work)', env.get('OneDriveCommercial'))
+    for d in [home] + [f'{c}:\\' for c in 'GHIJ']:
+        add('Google Drive', os.path.join(d, 'My Drive')); add('Google Drive', os.path.join(d, 'Google Drive', 'My Drive'))
+    try:
+        info = os.path.join(env.get('LOCALAPPDATA', ''), 'Dropbox', 'info.json')
+        if os.path.isfile(info):
+            with open(info, encoding='utf-8') as f: d = json.load(f)
+            for v in d.values():
+                if isinstance(v, dict) and v.get('path'): add('Dropbox', v['path'])
+    except Exception:
+        pass
+    add('Dropbox', os.path.join(home, 'Dropbox')); add('iCloud Drive', os.path.join(home, 'iCloudDrive'))
+    add('Box', os.path.join(home, 'Box'))
+    return out
+
+CLOUD_APPS = ('OneDrive', 'Google Drive', 'Dropbox', 'iCloud Drive', 'Box')
+
+def storage_places(env=None):
+    """The Settings place buttons (3.31): This PC (Videos), every cloud folder found, then the usual cloud apps that
+    were not found with path None (the button asks for the folder). [(label, path or None)]"""
+    env = os.environ if env is None else env
+    home = env.get('USERPROFILE') or os.path.expanduser('~')
+    found = cloud_folders(env)
+    return ([('This PC', os.path.join(home, 'Videos'))] + found
+            + [(a, None) for a in CLOUD_APPS if not any(l.startswith(a) for l, _ in found)])
+
+def storage_kind(path):
+    """'network' for \\\\server\\share or a mapped network drive, 'cloud' inside a synced cloud folder, else 'local'."""
+    p = os.path.abspath(path or '')
+    if p.startswith('\\\\'): return 'network'
+    try:
+        import ctypes
+        if os.name == 'nt' and len(p) > 1 and p[1] == ':' and ctypes.windll.kernel32.GetDriveTypeW(p[:2] + '\\') == 4: return 'network'
+    except Exception:
+        pass
+    if any(os.path.normcase(p).startswith(os.path.normcase(c)) for _, c in cloud_folders()): return 'cloud'
+    return 'local'
+
+def storage_check(path):
+    """Can Seekframe write videos there? -> dict(ok, kind, free_gb, message). Writes and deletes one small test file."""
+    p = os.path.abspath(os.path.expanduser(path or ''))
+    kind = storage_kind(p)
+    try:
+        os.makedirs(p, exist_ok=True)
+        t = os.path.join(p, f'.seekframe_write_test_{uuid.uuid4().hex[:6]}')
+        with open(t, 'wb') as f: f.write(b'x' * 1024)
+        os.remove(t)
+        free = shutil.disk_usage(p).free / 1e9
+    except Exception as e:
+        return dict(ok=False, kind=kind, free_gb=None, message=f'{type(e).__name__}: {e}')
+    return dict(ok=True, kind=kind, free_gb=round(free, 1), message='')
+
+def mcp_status(claude_json=None, ps=None):
+    """Seekframe's connection for Claude (MCP): dict(claude=bool (Claude Code found), registered=bool (the 'shadow' server is
+    set up for Claude Code), running=int (MCP server processes alive now)). The process count uses one hidden PowerShell call."""
+    out = dict(claude=bool(assistant.find_claude()), registered=False, running=0)
+    try:
+        with open(claude_json or os.path.join(os.path.expanduser('~'), '.claude.json'), encoding='utf-8') as f:
+            out['registered'] = bool((json.load(f).get('mcpServers') or {}).get(assistant.SERVER))
+    except Exception:
+        pass
+    try:
+        r = (ps or subprocess.run)(['powershell', '-NoProfile', '-NonInteractive', '-Command',
+                                    "@(Get-CimInstance Win32_Process -Filter \"Name like 'python%'\" | Where-Object { $_.CommandLine -like '*mcp_server.py*' }).Count"],
+                                   capture_output=True, text=True, timeout=20, creationflags=rc.NOWIN)
+        out['running'] = int((r.stdout or '0').strip().splitlines()[-1])
+    except Exception:
+        pass
+    return out
+
+
 def restart_kw(env=None):
     """Popen arguments for starting Shadow again from inside Shadow: its own environment without PyInstaller's markers of
     this process, plus PYINSTALLER_RESET_ENVIRONMENT=1, so a new onefile exe unpacks itself instead of using our temp folder."""

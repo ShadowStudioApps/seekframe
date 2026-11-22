@@ -33,9 +33,9 @@ in English or Arabic. Windows SmartScreen may warn because the installer is not 
 with Windows) and ffmpeg (encoding and the quality check). If one is missing, the installer offers to install it with winget, and the top bar in Seekframe shows it in red with an
 *Install missing* button. Blender is optional and only needed for `.blend` scenes.
 
-**Update.** About 2 seconds after Seekframe opens it asks GitHub for the latest release. When a newer one exists, the button in
-the top-right corner turns into **Update to vX.Y**: press it, confirm, and Seekframe downloads the installer (checking its size
-and SHA-256), installs it and opens again by itself. You can also press **Check for updates** at any time. Your settings,
+**Update.** About 2 seconds after Seekframe opens it asks GitHub for the latest release. When a newer one exists, a bar
+appears under the page title and Windows shows a notification (once per version): press **Update now**, confirm, and Seekframe downloads the installer (checking its size
+and SHA-256), installs it and opens again by itself. You can also press **Check for updates** on the About page at any time. Your settings,
 logs and videos are kept. The update waits while a render is running.
 
 **Uninstall.** Windows *Settings → Apps → Installed apps → Seekframe → Uninstall*. Your settings file and log
@@ -58,15 +58,19 @@ sidebar (Seekframe remembers it).
 - **Queue**: your scenes, the render options (Quality, Format, Sound, Capture, Blender), the Render buttons and the progress.
 - **New video**, **AI tools**, **YouTube...**, **Project** and **Assistant** open those windows or menus.
 - **Settings** (bottom):
-  - *Save videos to*: the folder (a cloud-folder button for each OneDrive / Google Drive / Dropbox / iCloud folder found; a NAS
-    works too, e.g. `\NAS\Videos`), the Folder rule, and **Check access** (can Seekframe write there, how much space is free).
+  - *Save videos to*: the folder (buttons for This PC, OneDrive, Google Drive, Dropbox, iCloud Drive, Box and
+    *Network drive (NAS)...*; one that is not found asks for its folder), the Folder rule, and **Check access** (can Seekframe write there, how much space is free).
   - *Setup*: Chrome, ffmpeg, Playwright, Blender, with *Install missing* and *Self-test*.
-  - *Claude connection (MCP)*: green when Claude Code is installed, Seekframe is set up for it, and a connection is open now.
+  - *AI connections*: a tick box for every AI app on this PC (Claude Code, Claude Desktop, Cursor, VS Code Copilot,
+    Windsurf / Devin, Gemini CLI, Codex). Tick one and Seekframe sets itself up in that app (restart the app if it is
+    open); green = connected, *In use now* = it is running Seekframe. Windows shows a notification when one connects.
+    Below: which AI does Seekframe's own AI buttons (Claude Code or Gemini CLI); the Assistant chat always uses Claude Code.
   - *AI account*: your Claude subscription (default), or your own Anthropic API key (paid per use; stored encrypted).
   - *Language*.
 - **About** (bottom, picture below): the version, Shadow Studio, and links to the GitHub page, this guide, what's new, the privacy
   policy and *Report a problem*.
-- **Check for updates** is at the bottom of the sidebar; it becomes *Update to vX.Y* when a new version is out.
+- **Check for updates** is on the About page; it becomes *Update to vX.Y* when a new version is out (and a bar with
+  *Update now* appears under the page title).
 
 <img src="screenshot_about.png" alt="The About page" width="80%">
 

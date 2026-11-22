@@ -101,12 +101,14 @@ def gui(newer):
     app.messagebox.askyesno = lambda title, text, **k: (msgs.append(('ask', text)), True)[1]
     ver = f'v{rc.VERSION}' if not newer else 'v99.0'
     STATE['release'] = release(ver)
+    toasts = []; app.notify = lambda *x, **k: toasts.append(x)   # 3.31: never a real Windows notification from a test
     a = app.App(); a.withdraw(); ran = []
     a.run_installer = lambda p: ran.append(p)   # never start a setup in a test
     try:
         t0 = time.time()
         while time.time() - t0 < 10 and not a.update_rel: a.update(); time.sleep(0.05)
-        assert a.update_btn.winfo_manager() == 'pack', 'the update button is always in the top bar'
+        assert a.update_btn.winfo_manager() == 'pack', 'the update button is on the About page'
+        assert len(toasts) == (1 if newer else 0) and bool(a.update_bar.winfo_manager()) == newer, (toasts, a.update_bar.winfo_manager())
         if not newer:
             assert a.update_rel is None and a.update_btn.cget('text') == 'Check for updates', a.update_btn.cget('text')
             # manual check, up to date -> 'latest version'; unreachable -> a warning (both only for the button, never at start)

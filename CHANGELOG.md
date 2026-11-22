@@ -3,6 +3,26 @@
 Every release is on the [Releases](../../releases) page with its `Seekframe-<version>-Setup.exe`. Installed copies update
 themselves: Seekframe shows **Update to vX.Y** when a new release is out.
 
+## 3.32
+- **Settings > AI connections** (was *Claude connection*): every AI app found on your PC (Claude Code, Claude Desktop,
+  Cursor, VS Code Copilot, Windsurf / Devin, Gemini CLI, Codex) has a tick box. Tick it and Seekframe sets itself up in
+  that app's own settings (only its own `shadow` entry; the old file is kept as `<file>.seekframe-backup`). A green light
+  shows the connected ones, *In use now* the ones running Seekframe, and Windows shows a notification when an app
+  connects or starts using Seekframe. Apps that are not installed are listed in one line instead.
+- **Choose the AI for Seekframe's own AI buttons**: Claude Code (default) or Gemini CLI. *Fix the scene*, *YouTube text*
+  and *New video* use the one you pick (checked first, with a notification). Gemini may only read files and edit the one
+  file the job names (a Gemini policy file: shell, web, helper agents and MCP are refused). The Assistant chat stays on
+  Claude Code.
+
+## 3.31
+- **Update notice**: when a new version is out, a bar appears under the page title (*Update now*, *What's new*, *Later*) and
+  Windows shows one notification for that version. *Check for updates* left the sidebar; it is on the About page.
+- **Settings > Save videos to** has more places: *This PC* (your Videos folder), OneDrive, Google Drive, Dropbox, iCloud Drive,
+  Box and *Network drive (NAS)...*. A cloud app Seekframe cannot find, and the NAS button, ask you for the folder.
+- **Smoother Assistant**: opening or closing the Assistant no longer resizes the whole window (the table was squeezed while
+  it moved); the window only grows when it is too narrow for both.
+- **Shadow Studio** mark (logo + name) at the bottom of the sidebar; a click opens the studio's page.
+
 ## 3.30
 - **The render options are back on the Queue page**: Quality, Format, Sound, Capture and Blender sit right under the table.
   *Save to* and *Folder* are in Settings.

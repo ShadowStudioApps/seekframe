@@ -27,7 +27,13 @@ Only inside this repo (project scope; writes `.mcp.json` into the repo, the same
 Check: `claude mcp list` should show `shadow: ... - Connected`. In a session, `/mcp` lists the 9 tools.
 Remove: `claude mcp remove shadow --scope user`.
 
-Claude Desktop, Cursor, VS Code, Windsurf, Gemini CLI: see *Other AI clients* below. Inside the Seekframe window there is
+**Easiest (3.32):** Seekframe > Settings > *AI connections*: tick the app (Claude Code, Claude Desktop, Cursor, VS Code,
+Windsurf / Devin, Gemini CLI, Codex) and Seekframe writes the entry below into that app's settings for you (only its own
+`shadow` entry; the old file is kept as `<file>.seekframe-backup`). The Microsoft Store build of Claude Desktop keeps its
+file in `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude\`. Codex: `%USERPROFILE%\.codex\config.toml`,
+table `[mcp_servers.shadow]` with `command` and `args`.
+
+Claude Desktop, Cursor, VS Code, Windsurf, Gemini CLI by hand: see *Other AI clients* below. Inside the Seekframe window there is
 also an **Assistant** panel that chats with Claude Code and these tools: see [ASSISTANT.md](ASSISTANT.md).
 
 The skill in `claude-skills/shadow-mcp/SKILL.md` (copied to `~/.claude/skills/shadow-mcp/`) tells Claude when and how to use the tools.

@@ -19,6 +19,7 @@ except Exception: pass
 import render_core as rc
 os.environ['SHADOW_LANG'] = 'en'   # 3.20: the tests read the English texts
 import app
+app.notify = lambda *a, **k: None   # 3.32: never a real Windows notification from a test
 import qc
 from regression import browsers, probe, render_dirs, _band_db   # helpers only (its tests run only under __main__)
 

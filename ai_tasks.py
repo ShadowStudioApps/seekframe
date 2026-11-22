@@ -41,8 +41,18 @@ CONTRACT = """The Seekframe scene contract (what every scene must do):
 - optional window.THUMBNAIL_T = the time of the thumbnail frame."""
 
 
+# ---------------------------------------------------------------- which AI does the jobs (3.32: Settings > AI connections)
+ENGINE = 'claude'   # 'claude' (Claude Code, the default) or 'gemini' (Gemini CLI); the Assistant chat is always Claude Code
+ENGINES = {'claude': 'Claude Code', 'gemini': 'Gemini CLI'}
+
+
+def Task(cwd, edit_files=(), **kw):
+    """One AI job with the engine chosen in Settings (ClaudeTask or GeminiTask; both: ask(), stop(), session_id)."""
+    return (GeminiTask if ENGINE == 'gemini' else ClaudeTask)(cwd, edit_files, **kw)
+
+
 # ---------------------------------------------------------------- one Claude job
-class Task:
+class ClaudeTask:
     """Claude runs in `cwd`; `edit_files` = names (inside cwd) it may edit / write. on_event(kind, *data) from a reader
     thread: ('status', s) ('text', s) ('tool', summary) ('denied', summary). ask() blocks and returns
     dict(ok, text, error, session_id, denials). stop() kills it (from any thread)."""
@@ -112,6 +122,128 @@ class Task:
             return dict(ok=False, text=''.join(text), error=why, session_id=self.session_id, denials=denials)
         final = result.get('result') if isinstance(result.get('result'), str) else ''.join(text)
         return dict(ok=True, text=final or ''.join(text), error=None, session_id=self.session_id, denials=denials)
+
+    def stop(self):
+        self.stopped = True; asst.kill_tree(self.proc)
+
+
+# ---------------------------------------------------------------- one Gemini CLI job (3.32)
+def find_gemini(which=shutil.which):
+    """[node.exe, gemini.js] of the installed Gemini CLI (npm's gemini.cmd only starts node with that script; running the
+    script directly keeps the prompt away from cmd.exe's quoting), else [gemini] when only that is found, else None."""
+    g = which('gemini')
+    if not g: return None
+    d = os.path.dirname(g)
+    js = os.path.join(d, 'node_modules', '@google', 'gemini-cli', 'bundle', 'gemini.js')
+    node = os.path.join(d, 'node.exe') if os.path.isfile(os.path.join(d, 'node.exe')) else which('node')
+    if os.path.isfile(js) and node: return [node, js]
+    return [g]
+
+
+def gemini_ready(cmd):
+    """(ok, message) like assistant.check_ready: Gemini CLI installed and signed in (it keeps its Google sign-in in ~/.gemini)."""
+    if not cmd: return False, 'Gemini CLI was not found. Install it (npm install -g @google/gemini-cli) and sign in once by running gemini.'
+    home = os.path.join(os.path.expanduser('~'), '.gemini')
+    if not (os.environ.get('GEMINI_API_KEY') or glob.glob(os.path.join(home, 'oauth_creds*.json')) or os.path.isfile(os.path.join(home, 'google_accounts.json'))):
+        return False, 'Gemini CLI is not signed in yet: run gemini once in a terminal and sign in with Google.'
+    return True, 'Gemini CLI'
+
+
+def _js_regex_escape(s):
+    return re.sub(r'([.^$*+?()\[\]{}|\\/])', r'\\\1', s)
+
+
+def gemini_policy(edit_files):
+    """Gemini CLI policy rules (TOML): read files; write / replace ONLY the named files; every other tool is refused (shell,
+    web, sub-agents, MCP). Measured with Gemini CLI 0.68: a deny rule WITH an argsPattern keeps tools visible to the model
+    (a global deny hides them), and Gemini refuses nested-quantifier regexes, so the file rule stays one simple pattern."""
+    rules = []
+    for f in edit_files:
+        pat = '"file_path":"[^"]*' + _js_regex_escape(f) + '"'
+        rules.append(f'[[rule]]\ntoolName = ["write_file", "replace"]\nargsPattern = {json.dumps(pat)}\ndecision = "allow"\npriority = 900\n')
+    rules.append('[[rule]]\ntoolName = ["read_file", "read_many_files", "list_directory", "glob", "grep_search", "search_file_content"]\n'
+                 'decision = "allow"\npriority = 500\n')
+    rules.append('[[rule]]\ntoolName = "*"\nargsPattern = "."\ndecision = "deny"\npriority = 100\n'
+                 'denyMessage = "Seekframe allows only reading files and editing the one file named in the task."\n')
+    return '\n'.join(rules)
+
+
+class GeminiTask:
+    """The same job as ClaudeTask, done by Gemini CLI (`gemini -p` headless, --output-format stream-json). Gemini may read
+    files and change only `edit_files` (gemini_policy, loaded with --policy); --approval-mode default, so anything without
+    an allow rule is refused in headless mode. Uses the owner's own Gemini sign-in; nothing is paid through Seekframe."""
+
+    def __init__(self, cwd, edit_files=(), on_event=lambda *a: None, lang='English', exe=None, popen=subprocess.Popen,
+                 ready=gemini_ready, model=None, add_dirs=(), find=None, **_ignored):
+        self.cwd = cwd; self.edit_files = [os.path.basename(f) for f in edit_files]; self.on_event = on_event
+        self.lang = lang; self.exe = exe; self.popen = popen; self.ready = ready; self.model = model
+        self.add_dirs = list(add_dirs); self.session_id = None; self.proc = None; self.stopped = False; self.ready_ok = False
+        self.policy = None; self.find = find or find_gemini
+
+    def _policy_file(self):
+        if not self.policy:
+            import tempfile
+            d = tempfile.mkdtemp(prefix='shadow_gemini_')
+            self.policy = os.path.join(d, 'seekframe.toml')
+            with open(self.policy, 'w', encoding='utf-8') as f: f.write(gemini_policy(self.edit_files))
+        return self.policy
+
+    def args(self):
+        cmd = list(self.exe if isinstance(self.exe, (list, tuple)) else [self.exe])
+        a = cmd + ['-p', 'Do the job described above.', '--output-format', 'stream-json', '--approval-mode', 'default',
+                   '--skip-trust', '--allowed-mcp-server-names', 'none', '--policy', self._policy_file()]
+        for d in self.add_dirs:
+            if d and os.path.isdir(d): a += ['--include-directories', d]
+        if self.model: a += ['--model', self.model]
+        if self.session_id: a += ['--resume', self.session_id]
+        return a
+
+    def ask(self, prompt):
+        if self.stopped: return dict(ok=False, text='', error='stopped', session_id=self.session_id, denials=[])
+        if not self.ready_ok:
+            self.exe = self.exe or self.find()
+            ok, msg = self.ready(self.exe)
+            if not ok: return dict(ok=False, text='', error=msg, session_id=None, denials=[])
+            self.ready_ok = True
+        self.on_event('status', 'Starting Gemini...')
+        try:
+            p = self.proc = self.popen(self.args(), cwd=self.cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                       creationflags=NOWIN)
+        except Exception as e:
+            return dict(ok=False, text='', error=f'could not start Gemini CLI: {e}', session_id=None, denials=[])
+        err = []
+        threading.Thread(target=lambda: [err.append(l.decode('utf-8', 'replace').rstrip()) for l in iter(p.stderr.readline, b'')], daemon=True).start()
+        try:   # the prompt goes in on stdin (Gemini appends -p to it): no length limit, no command-line quoting
+            p.stdin.write((SYSTEM.format(lang=self.lang) + '\n\n' + prompt).encode('utf-8')); p.stdin.close()
+        except Exception: pass
+        self.on_event('status', 'Gemini is working...')
+        text, result, denials, names = [], None, [], {}
+        for raw in iter(p.stdout.readline, b''):
+            try: d = json.loads(raw.decode('utf-8', 'replace'))
+            except ValueError: continue
+            t = d.get('type')
+            if t == 'init' and d.get('session_id'): self.session_id = d['session_id']
+            elif t == 'message' and d.get('role') == 'assistant' and d.get('content'):
+                text.append(d['content']); self.on_event('text', d['content'])
+            elif t == 'tool_use':
+                prm = d.get('parameters') or {}
+                s = f"{d.get('tool_name')}: {os.path.basename(str(prm.get('file_path') or prm.get('dir_path') or prm.get('pattern') or ''))}".rstrip(': ')
+                names[d.get('tool_id')] = s
+                self.on_event('tool', s); self.on_event('status', f'Gemini: {d.get("tool_name")}')
+            elif t == 'tool_result' and d.get('status') == 'error' and (d.get('error') or {}).get('type') == 'policy_violation':
+                denials.append(names.get(d.get('tool_id'), '?')); self.on_event('denied', denials[-1])
+            elif t == 'error':
+                self.on_event('status', str(d.get('message') or d.get('error') or 'Gemini error')[:200])
+            elif t == 'result':
+                result = d
+        code = p.wait(); self.proc = None
+        if self.stopped: return dict(ok=False, text=''.join(text), error='stopped', session_id=self.session_id, denials=denials)
+        bad = (result or {}).get('status') not in (None, 'success') or code != 0
+        if bad:
+            msgs = [l for l in err if l.strip() and not l.startswith('    at ')]
+            why = str(((result or {}).get('error') or {}).get('message') or '') or f'Gemini CLI stopped (exit {code})' + (': ' + ' / '.join(msgs[-3:]) if msgs else '')
+            return dict(ok=False, text=''.join(text), error=why, session_id=self.session_id, denials=denials)
+        return dict(ok=True, text=''.join(text), error=None, session_id=self.session_id, denials=denials)
 
     def stop(self):
         self.stopped = True; asst.kill_tree(self.proc)

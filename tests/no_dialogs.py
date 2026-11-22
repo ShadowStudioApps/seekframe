@@ -12,4 +12,5 @@ def block(app):
     for n in ('askopenfilename', 'asksaveasfilename', 'askdirectory'):
         setattr(app.filedialog, n, (lambda n: lambda *a, **k: CALLS.append(n) or '')(n))
     app.filedialog.askopenfilenames = lambda *a, **k: CALLS.append('askopenfilenames') or ()
+    app.notify = lambda *a, **k: CALLS.append('notify')   # 3.32: no real Windows notification either
     return CALLS

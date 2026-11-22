@@ -12,6 +12,7 @@ try: sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception: pass
 os.environ['SHADOW_LANG'] = 'en'   # 3.20: the tests read the English texts
 import app
+app.notify = lambda *a, **k: None   # 3.32: never a real Windows notification from a test
 
 fails = []
 def check(name, ok, info=''):

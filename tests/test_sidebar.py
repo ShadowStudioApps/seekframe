@@ -5,7 +5,8 @@
   S4 sidebar rows run their actions (Assistant toggles the panel and is marked while open)
   S5 About shows the version and the links point to the app's GitHub home
   S6 the render options are on the Queue page (3.30); Save to / Folder in Settings
-  S8 Claude (MCP) lights; S9 Check access for local / NAS / cloud folders; S10 AI account (subscription default, own API key
+  S11 (3.31) a new version shows a bar + one Windows notification per version; S12 storage places (This PC, clouds, NAS)
+  S8 (3.32) AI connections (a row per AI app, tick = connect, notifications) and the AI for the AI jobs; S9 Check access for local / NAS / cloud folders; S10 AI account (subscription default, own API key
      encrypted with DPAPI, asks before paid use, passed to Claude Code only in that mode)
 Usage: python tests/test_sidebar.py     exit 0 = all PASS"""
 import os, shutil, sys, tempfile
@@ -31,7 +32,8 @@ try:
     check('S1 opens on the Queue page', w.page == 'queue' and w.page_title.cget('text') == 'Queue')
     check('S1 the old widgets are all still there', all(hasattr(w, n) for n in ('tree', 'go', 'stop', 'stop_cur', 'status', 'bar', 'eta_lbl', 'yt_btn',
           'check_btn', 'narr_btn', 'update_btn', 'selftest_btn', 'env_lbls', 'folder_box', 'lang_box', 'theme_btn', 'ai_btn', 'proj_btn')))
-    check('S1 the update button stays in the window (sidebar)', w.update_btn.winfo_manager() == 'pack' and str(w.update_btn.master) == str(w.side))
+    check('S1 Check for updates lives on the About page only (3.31: not in the sidebar)', w.update_btn.winfo_manager() == 'pack'
+          and str(w.update_btn).startswith(str(w.pages['about'])) and not [c for c in w.side.winfo_children() if c.winfo_class() == 'TButton'])
     w.show_page('settings'); w.update()
     check('S2 Settings page shown, row marked', w.page == 'settings' and w.page_title.cget('text') == 'Settings'
           and w._nav_selected('settings') and not w._nav_selected('queue'))
@@ -51,10 +53,18 @@ try:
     check('S7 switching pages stays under 150 ms on average (3.30 measured ~95 ms; the theme draws every widget on show)', ms < 150, f'{ms:.1f} ms')
     called = []
     real = w.toggle_assistant
+    w.geometry('2000x900'); w.update(); w0 = w.winfo_width()
     w.nav['assistant'].invoke(); w.update()
+    check('S4 opening the Assistant in a wide window does not resize it (3.31: no squeezed table)', w.winfo_width() == w0, f'{w0} -> {w.winfo_width()}')
     check('S4 the Assistant row opens the panel and is marked', w.ai_open and w._nav_selected('assistant') and w.ai_frame.winfo_manager() == 'pack')
     w.nav['assistant'].invoke(); w.update()
-    check('S4 and closes it again', not w.ai_open and not w._nav_selected('assistant'))
+    check('S4 and closes it again, same window width', not w.ai_open and not w._nav_selected('assistant') and w.winfo_width() == w0, w.winfo_width())
+    w.geometry(f'{w.winfo_reqwidth()}x900'); w.update(); n0 = w.winfo_width()
+    w.toggle_assistant(); w.update()
+    check('S4 a narrow window grows once to fit the panel, the pages keep their width', w.winfo_width() > n0 and w.body.winfo_width() >= w.body.winfo_reqwidth() - 2,
+          f'{n0} -> {w.winfo_width()}, body {w.body.winfo_width()}/{w.body.winfo_reqwidth()}')
+    w.toggle_assistant(); w.update()
+    check('S4 and gives the room back on close', abs(w.winfo_width() - n0) <= 2, f'{n0} -> {w.winfo_width()}')
     w.nav['queue'].invoke(); w.update(); check('S4 the Queue row opens the Queue page', w.page == 'queue')
     w.show_page('about'); w.update()
     texts = []
@@ -70,21 +80,76 @@ try:
         for c in b.winfo_children():
             if getattr(c, 'cget', None) and c.winfo_class() == 'TButton' and c.cget('text') == 'GitHub page': c.invoke()
     check('S5 GitHub page opens the app home', opened == [f'https://github.com/{updater.REPO}'], opened)
+    opened.clear(); w.studio_lbl.event_generate('<Button-1>'); w.update()
+    check('S5 the Shadow Studio mark sits at the bottom of the sidebar and opens the studio page', w.studio_logo is not None
+          and w.studio_box.winfo_manager() == 'pack' and opened == ['https://github.com/' + updater.REPO.split('/')[0]], opened)
     # S6 (3.30): the render options are on the Queue page again
     combos = [c for c in w.pages['queue'].winfo_children() if c.winfo_class() == 'TLabelframe' and c.cget('text') == 'Options']
     names = [x.cget('text') for x in combos[0].winfo_children() if x.winfo_class() == 'TLabel'] if combos else []
     check('S6 Quality, Format, Sound, Capture and Blender are on the Queue page', combos and all(n in names for n in ('Quality', 'Format', 'Sound', 'Capture', 'Blender')), names)
     check('S6 Save to and Folder stay in Settings', str(w.folder_box).startswith(str(w.pages['settings'])))
-    # S8 Claude (MCP) lights
-    w.show_mcp(dict(claude=True, registered=True, running=2)); w.update()
-    check('S8 MCP connected: three green lights, count shown', all(str(w.mcp_lbls[k][0].cget('foreground')) == '#3fb950' for k in ('claude', 'registered', 'running'))
-          and w.mcp_lbls['running'][1].cget('text') == 'Connected now (2)')
-    w.show_mcp(dict(claude=True, registered=False, running=0)); w.update()
-    check('S8 not set up: red light, "Not connected now"', str(w.mcp_lbls['registered'][0].cget('foreground')) == '#f85149'
-          and w.mcp_lbls['running'][1].cget('text') == 'Not connected now')
-    cj = os.path.join(TMP, 'claude.json'); open(cj, 'w').write('{"mcpServers": {"shadow": {"command": "python"}}}')
-    st = app.mcp_status(claude_json=cj, ps=lambda *a, **k: type('R', (), {'stdout': '3' + chr(10)})())
-    check('S8 mcp_status reads the setup and counts the server processes', st['registered'] and st['running'] == 3, st)
+    # S11 (3.31) a new version: a bar under the header + one Windows notification per version
+    toasts = []; real_notify = app.notify; app.notify = lambda *a, **k: toasts.append(a)
+    try:
+        check('S11 no update bar without an update', not w.update_bar.winfo_manager())
+        rel = dict(version='99.0', notes='x', page='https://example.invalid/r')
+        w.show_update(rel); w.update()
+        check('S11 the update bar shows the new version', w.update_bar.winfo_manager() == 'pack' and '99.0' in w.update_lbl.cget('text'))
+        check('S11 a Windows notification once, remembered in settings', len(toasts) == 1 and saved.get('update_seen') == '99.0', (toasts, saved.get('update_seen')))
+        w.hide_update_bar(); w.show_update(rel); w.update()
+        check('S11 the same version again: bar back, no second notification', w.update_bar.winfo_manager() == 'pack' and len(toasts) == 1)
+        w.hide_update_bar(); w.update(); check('S11 Later hides the bar', not w.update_bar.winfo_manager())
+        check('S11 the About button says Update to v99.0', w.update_btn.cget('text') == 'Update to v99.0')
+    finally:
+        app.notify = real_notify; w.update_rel = None
+    # S12 (3.31) storage places: This PC + every cloud app (found or not) + NAS
+    home = os.path.join(TMP, 'home'); os.makedirs(os.path.join(home, 'Dropbox')); os.makedirs(os.path.join(home, 'Box'))
+    pl = app.storage_places({'USERPROFILE': home})
+    names = [l for l, _ in pl]
+    check('S12 This PC first, then found clouds, then the others to pick', names[0] == 'This PC' and dict(pl)['Dropbox'] and dict(pl)['Box']
+          and all(n in names for n in app.CLOUD_APPS) and dict(pl)['OneDrive'] is None, pl)
+    check('S12 the Settings page has a button per place + NAS + Check access', len(w.cloud_btns) >= 7 and w.storage_btn.winfo_manager() == 'grid')
+    picked = os.path.join(TMP, 'nas share'); os.makedirs(picked)
+    r = w.use_storage('nas', pick=lambda **k: picked)
+    check('S12 NAS asks for the folder and uses it as is', w.out_dir.get() == os.path.normpath(picked) and r and r['ok'], (w.out_dir.get(), r))
+    check('S12 a cloud app not found: Cancel changes nothing', w.use_storage(None, 'Google Drive', pick=lambda **k: '') is None and w.out_dir.get() == os.path.normpath(picked))
+    w.use_storage(os.path.join(home, 'Dropbox')); check('S12 a found cloud saves in the Seekframe folder of the cloud', w.out_dir.get() == os.path.join(home, 'Dropbox', 'Seekframe'))
+    # S8 (3.32) AI connections: a row per AI app on this PC, tick = connected, a notification when one connects / starts using it
+    toasts = []; T = lambda *a, **k: toasts.append(a)
+    mk = lambda key, inst, conn, use: dict(key=key, name=app.ai_clients.BY_KEY[key].name, installed=inst, connected=conn, using=use)
+    w._using_prev = None
+    st = [mk('claude_code', True, True, 2), mk('claude_desktop', True, False, 0), mk('cursor', False, False, 0), mk('vscode', False, False, 0),
+          mk('windsurf', False, False, 0), mk('gemini', True, False, 0), mk('codex', True, False, 0)]
+    w.show_mcp(st, toast=T); w.update()
+    r = w.cli_rows
+    check('S8 Claude Code: ticked, green, "In use now (2)"', r['claude_code']['var'].get() and str(r['claude_code']['dot'].cget('foreground')) == '#3fb950'
+          and r['claude_code']['st'].cget('text') == 'In use now (2)')
+    check('S8 Claude Desktop / Gemini / Codex shown, not ticked', all(r[k]['cb'].winfo_manager() == 'grid' and not r[k]['var'].get() for k in ('claude_desktop', 'gemini', 'codex')))
+    check('S8 apps not on this PC: no row, one grey line', not r['cursor']['cb'].winfo_manager() and 'Cursor' in w.cli_missing.cget('text') and 'Windsurf' in w.cli_missing.cget('text'))
+    check('S8 no notification on the first check', toasts == [])
+    st[1] = mk('claude_desktop', True, True, 1); w.show_mcp(st, toast=T); w.update()
+    check('S8 an app that starts using Seekframe: one notification', len(toasts) == 1 and 'Claude Desktop is now using Seekframe.' in toasts[0], toasts)
+    w.show_mcp(st, toast=T); check('S8 still in use: no second notification', len(toasts) == 1)
+    home = os.path.join(TMP, 'aihome')
+    r['cursor']['var'].set(True); w.on_client('cursor', wait=True, toast=T, home=home); w.update()
+    w.update(); import time as _t; _t.sleep(0.3); w.update()
+    cfg = os.path.join(home, '.cursor', 'mcp.json')
+    check('S8 ticking an app writes its config and notifies', os.path.isfile(cfg) and 'shadow' in open(cfg).read() and r['cursor']['var'].get()
+          and any('Cursor can use Seekframe now' in x[1] for x in toasts), (os.path.isfile(cfg), toasts))
+    r['cursor']['var'].set(False); w.on_client('cursor', wait=True, toast=T, home=home); w.update(); _t.sleep(0.3); w.update()
+    check('S8 un-ticking removes it again', 'shadow' not in open(cfg).read() and not r['cursor']['var'].get())
+    # which AI does Seekframe's own AI buttons
+    check('S8 Claude Code does the AI jobs by default', w.engine.get() == 'claude' and app.ai_tasks.ENGINE == 'claude')
+    n0 = len(toasts)
+    w.engine.set('gemini'); ok = w.on_engine(ready=lambda c: (False, 'not signed in'), toast=T)
+    check('S8 an AI that is not ready is refused, the choice stays', ok is False and w.engine.get() == 'claude' and app.ai_tasks.ENGINE == 'claude'
+          and 'not signed in' in w.engine_lbl.cget('text') and len(toasts) == n0)
+    try:
+        w.engine.set('gemini'); ok = w.on_engine(ready=lambda c: (True, 'ok'), toast=T)
+        check('S8 switching to Gemini: saved, used by the AI jobs, notified', ok and app.ai_tasks.ENGINE == 'gemini' and saved['ai'].get('engine') == 'gemini'
+              and len(toasts) == n0 + 1 and 'Gemini CLI' in toasts[-1][1] and 'Gemini CLI' in w.engine_lbl.cget('text'))
+    finally:
+        w.engine.set('claude'); w.on_engine(ready=lambda c: (True, 'ok'), toast=T)
     # S9 storage: a folder that works, one that cannot be written
     ok = app.storage_check(os.path.join(TMP, 'videos out'))
     check('S9 Check access: a writable folder is OK with free space', ok['ok'] and ok['kind'] == 'local' and ok['free_gb'] > 0, ok)

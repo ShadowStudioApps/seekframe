@@ -180,6 +180,7 @@ def a7():
 def a8():
     os.environ['SHADOW_LANG'] = 'en'   # 3.20: the tests read the English texts
     import app
+    app.notify = lambda *a, **k: None   # 3.32: never a real Windows notification from a test
     app.CFG = os.path.join(TMP, 'cfg.json'); app.LOG = os.path.join(TMP, 'shadow.log'); app.LOG_DIR = os.path.join(TMP, 'logs')
     for h in list(app.log.handlers): app.log.removeHandler(h)
     boxes = []
