@@ -563,7 +563,8 @@ class App(Root):
         self._run_t0 = {}      # path -> time its render started (the Time column shows how long it took)
         self._cur_left = None  # (path, seconds left) of the file rendering now
         self.check_thread = None; self.check_results = []; self.check_kw = {}   # Check frames (check_kw: tests pass Chrome options)
-        self.cfg_ai = dict(cfg.get('ai') or {})   # New video (AI): style, length, voice, dir, voice_python (3.19)
+        self.cfg_ai = dict(cfg.get('ai') or {})
+        assistant.AUTH_MODE = 'api_key' if self.cfg_ai.get('auth') == 'api_key' else 'subscription'   # 3.30 Settings > AI account   # New video (AI): style, length, voice, dir, voice_python (3.19)
         self.row_problems = {}   # path -> what went wrong last (render error + log, QC, Check frames): the AI window starts from it
         f = cfg.get('format'); self.fmt = tk.StringVar(value=f if f in FORMAT_CHOICES else '16:9 (YouTube)')
         c = OLD_CAPTURE_LABELS.get(cfg.get('capture'), cfg.get('capture')); self.capture = tk.StringVar(value=c if c in CAPTURES else next(iter(CAPTURES)))
@@ -580,10 +581,10 @@ class App(Root):
         self.build()
         self.apply_theme(refresh=True)   # sv-ttk set before the widgets exist leaves wrong fonts/colours on the first pass
         self.check()
+        self.check_mcp()
         self.update_idletasks()   # size the window to its content (fonts scale with the display DPI), the tallest page counts
         rw, rh = self.winfo_reqwidth(), self.winfo_reqheight()
-        for n in ('settings', 'about', 'queue'):
-            self.show_page(n); self.update_idletasks(); rw, rh = max(rw, self.winfo_reqwidth()), max(rh, self.winfo_reqheight())
+        # (the pages share one grid cell, so the window already asks for the tallest one)
         w, h = max(rw, int(self.winfo_fpixels('8i'))), rh + int(self.winfo_fpixels('0.3i'))
         self.minsize(rw, rh); self.geometry(f'{w}x{h}')
         self._poll_id = self.after(150, self.poll)
@@ -701,7 +702,11 @@ class App(Root):
         self.theme_btn = ttk.Button(hdr, width=9, command=self.toggle_theme); self.theme_btn.pack(side='right')
         self._top = hdr
         self._theme_text()
-        self.pages = {n: ttk.Frame(self.body) for n in ('queue', 'settings', 'about')}
+        # the pages sit on top of each other in one grid cell; switching only raises one (no re-layout: 117 ms -> ~1 ms)
+        self.page_box = ttk.Frame(self.body); self.page_box.pack(fill='both', expand=True)
+        self.page_box.rowconfigure(0, weight=1); self.page_box.columnconfigure(0, weight=1)
+        self.pages = {n: ttk.Frame(self.page_box) for n in ('queue', 'settings', 'about')}
+        for f in self.pages.values(): f.grid(row=0, column=0, sticky='nsew')
 
         # ==== Queue page: scenes, progress, actions
         qp = self.pages['queue']
@@ -736,9 +741,17 @@ class App(Root):
             bt.columnconfigure(i, weight=1, uniform='b')
         self.check_btn = btns['Check frames']
         self.narr_btn = btns['Narration...']; self.narr_btn.config(state='disabled')   # enabled when one row is selected that can take narration
-        # the options in one line; a click opens Settings
-        self.opt_line = ttk.Label(qp, text='', foreground='#888', cursor='hand2'); self.opt_line.pack(fill='x', padx=P)
-        self.opt_line.bind('<Button-1>', lambda e: self.show_page('settings'))
+        # the render options, right on the Queue page (3.30: one click away, not inside Settings)
+        op = ttk.LabelFrame(qp, text=tr('Options'), padding=(10, 6)); op.pack(fill='x', padx=P)
+        rows = (('Quality', self.preset, list(rc.PRESETS)), ('Format', self.fmt, FORMAT_CHOICES), ('Sound', self.snd, SOUNDS),
+                ('Capture', self.capture, list(CAPTURES)), ('Blender', self.bl_engine, BLENDER_ENGINES))
+        for i, (lbl, var, vals) in enumerate(rows):
+            r, c = i % 3, (i // 3) * 2
+            ttk.Label(op, text=tr(lbl)).grid(row=r, column=c, sticky='w', pady=2, padx=(0 if c == 0 else 18, 0))
+            i18n.Combo(op, var, vals, width=30).grid(row=r, column=c + 1, sticky='w', padx=8, pady=2)   # shows translations, keeps keys
+        ttk.Label(op, textvariable=self.snd_file, foreground='#888').grid(row=2, column=2, columnspan=2, sticky='w', padx=(18, 0))
+        self.snd.trace_add('write', self.on_sound)
+        self.fmt.trace_add('write', lambda *_: self.refresh_audio())   # the Format column follows the Format setting
         pr = ttk.Frame(qp); pr.pack(fill='x', padx=P, pady=(10, 0))
         self.bar = ttk.Progressbar(pr, maximum=100); self.bar.pack(side='left', fill='x', expand=True)
         self.pct = ttk.Label(pr, text='0%', width=16, anchor='e'); self.pct.pack(side='right', padx=(10, 0))
@@ -757,26 +770,25 @@ class App(Root):
                      ('Notify me when the queue ends', self.notify)):
             ttk.Checkbutton(chk, text=tr(t), variable=v).pack(side='left', padx=(0, 18))
 
-        # ==== Settings page: render options, setup, language
+        # ==== Settings page: where videos go (PC, NAS, cloud), setup, Claude (MCP), AI account, language
         sp = self.pages['settings']
-        op = ttk.LabelFrame(sp, text=tr('Options'), padding=10); op.pack(fill='x', padx=P, pady=(4, 10))
-        rows = (('Quality', self.preset, list(rc.PRESETS)), ('Format', self.fmt, FORMAT_CHOICES), ('Sound', self.snd, SOUNDS),
-                ('Capture', self.capture, list(CAPTURES)), ('Blender', self.bl_engine, BLENDER_ENGINES))
-        for r, (lbl, var, vals) in enumerate(rows):
-            ttk.Label(op, text=tr(lbl)).grid(row=r, column=0, sticky='w', pady=3)
-            i18n.Combo(op, var, vals, width=32).grid(row=r, column=1, sticky='w', padx=10, pady=3)   # shows translations, keeps keys
-        self.snd.trace_add('write', self.on_sound)
-        self.fmt.trace_add('write', lambda *_: self.refresh_audio())   # the Format column follows the Format setting
-        ttk.Label(op, textvariable=self.snd_file, foreground='#888').grid(row=2, column=2, columnspan=2, sticky='w')
-        ttk.Label(op, text=tr('.blend scenes only (GPU: OptiX/CUDA when found)'), foreground='#888').grid(row=4, column=2, columnspan=2, sticky='w')
-        ttk.Label(op, text=tr('Save to')).grid(row=5, column=0, sticky='w', pady=3)
-        ttk.Entry(op, textvariable=self.out_dir).grid(row=5, column=1, columnspan=2, sticky='we', padx=10, pady=3)
-        ttk.Button(op, text=tr('Browse...'), command=self.pick_out).grid(row=5, column=3, sticky='e')
-        ttk.Label(op, text=tr('Folder')).grid(row=6, column=0, sticky='w', pady=3)
+        op = ttk.LabelFrame(sp, text=tr('Save videos to'), padding=10); op.pack(fill='x', padx=P, pady=(4, 10))
+        ttk.Label(op, text=tr('Save to')).grid(row=0, column=0, sticky='w', pady=3)
+        ttk.Entry(op, textvariable=self.out_dir).grid(row=0, column=1, columnspan=2, sticky='we', padx=10, pady=3)
+        ttk.Button(op, text=tr('Browse...'), command=self.pick_out).grid(row=0, column=3, sticky='e')
+        ttk.Label(op, text=tr('Folder')).grid(row=1, column=0, sticky='w', pady=3)
         self.folder_box = i18n.Combo(op, self.folder_choice, self.folder_values(), width=32)
-        self.folder_box.grid(row=6, column=1, sticky='w', padx=10, pady=3)
-        ttk.Label(op, text=tr('Auto: songs -> Music, the rest -> Video (Short + video share one folder)'), foreground='#888').grid(row=6, column=2, sticky='w')
-        ttk.Button(op, text=tr('New folder...'), command=self.add_main_folder).grid(row=6, column=3, sticky='e')
+        self.folder_box.grid(row=1, column=1, sticky='w', padx=10, pady=3)
+        ttk.Label(op, text=tr('Auto: songs -> Music, the rest -> Video (Short + video share one folder)'), foreground='#888').grid(row=1, column=2, sticky='w')
+        ttk.Button(op, text=tr('New folder...'), command=self.add_main_folder).grid(row=1, column=3, sticky='e')
+        cl = ttk.Frame(op); cl.grid(row=2, column=1, columnspan=3, sticky='w', padx=10, pady=(6, 0))
+        self.cloud_btns = []
+        for label, path in cloud_folders():
+            b = ttk.Button(cl, text=label, command=lambda p=path: self.use_storage(p)); b.pack(side='left', padx=(0, 6)); self.cloud_btns.append(b)
+        self.storage_btn = ttk.Button(cl, text=tr('Check access'), command=self.check_storage); self.storage_btn.pack(side='left')
+        self.storage_lbl = ttk.Label(op, text=tr('A NAS works too: type its address, for example \\\\NAS\\Videos, or a mapped drive like Z:\\Videos.'),
+                                     foreground='#888', wraplength=round(700 * k), justify='left')
+        self.storage_lbl.grid(row=3, column=1, columnspan=3, sticky='w', padx=10, pady=(6, 0))
         op.columnconfigure(2, weight=1)
         su = ttk.LabelFrame(sp, text=tr('Setup'), padding=10); su.pack(fill='x', padx=P, pady=(0, 10))
         env = ttk.Frame(su); env.pack(fill='x')
@@ -787,12 +799,33 @@ class App(Root):
         ttk.Button(env, text=tr('Install missing'), command=self.install_missing).pack(side='right')
         self.selftest_btn = ttk.Button(env, text=tr('Self-test'), command=self.run_selftest); self.selftest_btn.pack(side='right')
         ttk.Button(env, text=tr('Re-check'), command=self.check).pack(side='right', padx=6)
+        mc = ttk.LabelFrame(sp, text=tr('Claude connection (MCP)'), padding=10); mc.pack(fill='x', padx=P, pady=(0, 10))
+        mrow = ttk.Frame(mc); mrow.pack(fill='x')
+        self.mcp_lbls = {}
+        for key, text in (('claude', 'Claude Code'), ('registered', 'Seekframe set up for Claude'), ('running', 'Connected now')):
+            dot = ttk.Label(mrow, text='●', foreground='#888'); dot.pack(side='left'); txt = ttk.Label(mrow, text=tr(text)); txt.pack(side='left', padx=(3, 14))
+            self.mcp_lbls[key] = (dot, txt)
+        ttk.Button(mrow, text=tr('How to connect'), command=lambda: webbrowser.open(f'https://github.com/{updater.REPO}/blob/main/docs/MCP.md')).pack(side='right')
+        ttk.Button(mrow, text=tr('Re-check'), command=self.check_mcp).pack(side='right', padx=6)
+        ac = ttk.LabelFrame(sp, text=tr('AI account'), padding=10); ac.pack(fill='x', padx=P, pady=(0, 10))
+        self.ai_auth = tk.StringVar(value='api_key' if self.cfg_ai.get('auth') == 'api_key' else 'subscription')
+        ttk.Radiobutton(ac, text=tr('My Claude subscription through Claude Code (recommended, nothing paid per use)'), value='subscription',
+                        variable=self.ai_auth, command=self.on_ai_auth).pack(anchor='w')
+        ttk.Radiobutton(ac, text=tr('My own Anthropic API key (paid per use, billed by Anthropic)'), value='api_key',
+                        variable=self.ai_auth, command=self.on_ai_auth).pack(anchor='w', pady=(4, 0))
+        kr = ttk.Frame(ac); kr.pack(fill='x', pady=(6, 0))
+        self.key_var = tk.StringVar()
+        self.key_entry = ttk.Entry(kr, textvariable=self.key_var, show='•', width=46); self.key_entry.pack(side='left')
+        ttk.Button(kr, text=tr('Save key'), command=self.save_key).pack(side='left', padx=(6, 0))
+        ttk.Button(kr, text=tr('Remove key'), command=self.remove_key).pack(side='left', padx=(6, 0))
+        self.key_lbl = ttk.Label(ac, text='', foreground='#888', wraplength=round(700 * k), justify='left'); self.key_lbl.pack(anchor='w', pady=(6, 0))
         lg = ttk.LabelFrame(sp, text=tr('Language'), padding=10); lg.pack(fill='x', padx=P)
         # 3.20 language: 'Auto' = Windows' language when Seekframe has it; a change asks to restart
         self.lang_names = [tr('Auto (Windows)')] + list(i18n.LANGS.values())
         self.lang_var = tk.StringVar(value=self.lang_names[0] if self.lang_choice == 'auto' else i18n.LANGS.get(self.lang_choice, 'English'))
         self.lang_box = ttk.Combobox(lg, textvariable=self.lang_var, values=self.lang_names, state='readonly', width=24)
         self.lang_box.pack(side='left'); self.lang_box.bind('<<ComboboxSelected>>', lambda e: self.on_language())
+        self._key_status()
 
         # ==== About page
         ap = self.pages['about']
@@ -832,9 +865,6 @@ class App(Root):
         self.skip_done.trace_add('write', lambda *_: self.update_eta())
         for var in (self.preset, self.capture):
             var.trace_add('write', lambda *_: self.update_eta())
-        for var in (self.preset, self.fmt, self.snd, self.capture, self.folder_choice):
-            var.trace_add('write', lambda *_: self._opt_line())
-        self._opt_line()
         self.page = None; self.show_page('queue')
         self.side_colors()
         if not self.side_open: self.side.pack_forget()
@@ -880,11 +910,8 @@ class App(Root):
 
     def show_page(self, name):
         """Queue / Settings / About in the page area; the sidebar marks the open one."""
-        if name not in self.pages: return
-        if self.page == name and self.pages[name].winfo_manager(): return
-        for n, f in self.pages.items():
-            if n != name: f.pack_forget()
-        self.pages[name].pack(fill='both', expand=True)
+        if name not in self.pages or self.page == name: return
+        self.pages[name].tkraise()
         self.page = name
         self.page_title.config(text=tr({'queue': 'Queue', 'settings': 'Settings', 'about': 'About'}[name]))
         self.side_colors()
@@ -896,13 +923,72 @@ class App(Root):
         else: self.side.pack_forget()
         self.save()
 
-    def _opt_line(self):
-        """The Queue page's one-line summary of the render options (a click opens Settings)."""
-        try:
-            parts = [tr(self.preset.get()), tr(self.fmt.get()), tr(self.snd.get()), tr(self.capture.get())]
-            self.opt_line.config(text='  ·  '.join(parts) + '   ›')
-        except Exception:
-            pass
+    # ------------------------------------------------------------------ Settings: storage, Claude (MCP), AI account (3.30)
+    def use_storage(self, path):
+        """A cloud-folder button: save videos in <cloud>\\Seekframe (made on the first render), then check it."""
+        self.out_dir.set(os.path.join(path, 'Seekframe')); self.check_storage()
+
+    def check_storage(self):
+        d = self.out_dir.get().strip()
+        if not d: self.storage_lbl.config(text=tr('Choose a folder first.'), foreground='#f85149'); return None
+        r = storage_check(d)
+        kind = {'network': tr('network drive (NAS)'), 'cloud': tr('cloud folder'), 'local': tr('this PC')}[r['kind']]
+        if r['ok']:
+            self.storage_lbl.config(text=tr('OK: Seekframe can save there ({0}, {1} GB free).', kind, r['free_gb']), foreground='#3fb950')
+        else:
+            self.storage_lbl.config(text=tr('Seekframe cannot save there: {0}', r['message']), foreground='#f85149')
+        return r
+
+    def check_mcp(self, wait=False):
+        """The Claude (MCP) lights: in a thread (counting the server processes takes a second)."""
+        def run():
+            try: st = mcp_status()
+            except Exception: log.exception('mcp status'); st = dict(claude=False, registered=False, running=0)
+            self.q.put(('mcp', st))
+        if wait: run(); return None
+        threading.Thread(target=run, daemon=True).start()
+
+    def show_mcp(self, st):
+        if not hasattr(self, 'mcp_lbls'): return
+        green, red, grey = '#3fb950', '#f85149', '#888'
+        for key, ok in (('claude', st.get('claude')), ('registered', st.get('registered')), ('running', st.get('running', 0) > 0)):
+            dot, txt = self.mcp_lbls[key]
+            dot.config(foreground=green if ok else (grey if key == 'running' else red))
+        n = st.get('running', 0)
+        self.mcp_lbls['running'][1].config(text=tr('Connected now ({0})', n) if n else tr('Not connected now'))
+        self.mcp_state = st
+
+    def _key_status(self):
+        key = assistant.load_api_key()
+        if self.ai_auth.get() == 'api_key':
+            self.key_lbl.config(text=tr('The AI features use your API key {0}. Every request is billed by Anthropic.', assistant.key_hint(key)) if key
+                                else tr('Paste your Anthropic API key (starts with sk-ant-) and press Save key. It is stored encrypted for your Windows account only.'),
+                                foreground='#d29922' if key else '#888')
+        else:
+            self.key_lbl.config(text=tr('The AI features use your Claude subscription through Claude Code.') +
+                                ('  ' + tr('A saved API key {0} is kept but not used.', assistant.key_hint(key)) if key else ''), foreground='#888')
+
+    def on_ai_auth(self, ask=None):
+        """Switching to the API key asks once (it costs money per request); the choice is saved in settings 'ai'."""
+        mode = self.ai_auth.get()
+        if mode == 'api_key' and self.cfg_ai.get('auth') != 'api_key':
+            if not (ask or messagebox.askyesno)(tr('AI account'), tr('With an API key every AI request is billed to your Anthropic account. Use your API key?')):
+                self.ai_auth.set('subscription'); mode = 'subscription'
+        self.cfg_ai['auth'] = mode; assistant.AUTH_MODE = mode
+        if self.ai: self.ai.new_chat()   # the next chat starts with the new sign-in
+        self._key_status(); self.save()
+
+    def save_key(self):
+        try: assistant.save_api_key(self.key_var.get())
+        except ValueError as e: self.key_lbl.config(text=tr('That does not look like an Anthropic API key (it starts with sk-ant-).'), foreground='#f85149'); return False
+        except OSError as e: self.key_lbl.config(text=str(e), foreground='#f85149'); return False
+        self.key_var.set('')   # never kept on screen
+        self._key_status(); return True
+
+    def remove_key(self):
+        assistant.delete_api_key()
+        if self.ai_auth.get() == 'api_key': self.ai_auth.set('subscription'); self.on_ai_auth()
+        self._key_status()
 
     # ------------------------------------------------------------------ theme
     def apply_theme(self, refresh=False):
@@ -1461,6 +1547,8 @@ class App(Root):
                     self.ai_event(*m[1:])
                 elif m[0] == 'check':
                     self.show_check(m[1], m[2])
+                elif m[0] == 'mcp':
+                    self.show_mcp(m[1])
                 elif m[0] == 'check_status':
                     self.status.config(text=m[1])
                 elif m[0] == 'check_end':
@@ -1771,6 +1859,72 @@ class App(Root):
         except Exception: log.exception('check window'); return None
 
 
+def cloud_folders(env=None):
+    """Synced cloud folders found on this PC: [(label, path)]. OneDrive (personal / work), Google Drive (My Drive), Dropbox,
+    iCloud Drive. Only folders that exist; nothing is created."""
+    env = os.environ if env is None else env
+    home = env.get('USERPROFILE') or os.path.expanduser('~'); out = []
+    def add(label, p):
+        if p and os.path.isdir(p) and all(os.path.normcase(p) != os.path.normcase(q) for _, q in out): out.append((label, p))
+    add('OneDrive', env.get('OneDrive')); add('OneDrive (work)', env.get('OneDriveCommercial'))
+    for d in [home] + [f'{c}:\\' for c in 'GHIJ']:
+        add('Google Drive', os.path.join(d, 'My Drive')); add('Google Drive', os.path.join(d, 'Google Drive', 'My Drive'))
+    try:
+        info = os.path.join(env.get('LOCALAPPDATA', ''), 'Dropbox', 'info.json')
+        if os.path.isfile(info):
+            with open(info, encoding='utf-8') as f: d = json.load(f)
+            for v in d.values():
+                if isinstance(v, dict) and v.get('path'): add('Dropbox', v['path'])
+    except Exception:
+        pass
+    add('Dropbox', os.path.join(home, 'Dropbox')); add('iCloud Drive', os.path.join(home, 'iCloudDrive'))
+    return out
+
+def storage_kind(path):
+    """'network' for \\\\server\\share or a mapped network drive, 'cloud' inside a synced cloud folder, else 'local'."""
+    p = os.path.abspath(path or '')
+    if p.startswith('\\\\'): return 'network'
+    try:
+        import ctypes
+        if os.name == 'nt' and len(p) > 1 and p[1] == ':' and ctypes.windll.kernel32.GetDriveTypeW(p[:2] + '\\') == 4: return 'network'
+    except Exception:
+        pass
+    if any(os.path.normcase(p).startswith(os.path.normcase(c)) for _, c in cloud_folders()): return 'cloud'
+    return 'local'
+
+def storage_check(path):
+    """Can Seekframe write videos there? -> dict(ok, kind, free_gb, message). Writes and deletes one small test file."""
+    p = os.path.abspath(os.path.expanduser(path or ''))
+    kind = storage_kind(p)
+    try:
+        os.makedirs(p, exist_ok=True)
+        t = os.path.join(p, f'.seekframe_write_test_{uuid.uuid4().hex[:6]}')
+        with open(t, 'wb') as f: f.write(b'x' * 1024)
+        os.remove(t)
+        free = shutil.disk_usage(p).free / 1e9
+    except Exception as e:
+        return dict(ok=False, kind=kind, free_gb=None, message=f'{type(e).__name__}: {e}')
+    return dict(ok=True, kind=kind, free_gb=round(free, 1), message='')
+
+def mcp_status(claude_json=None, ps=None):
+    """Seekframe's connection for Claude (MCP): dict(claude=bool (Claude Code found), registered=bool (the 'shadow' server is
+    set up for Claude Code), running=int (MCP server processes alive now)). The process count uses one hidden PowerShell call."""
+    out = dict(claude=bool(assistant.find_claude()), registered=False, running=0)
+    try:
+        with open(claude_json or os.path.join(os.path.expanduser('~'), '.claude.json'), encoding='utf-8') as f:
+            out['registered'] = bool((json.load(f).get('mcpServers') or {}).get(assistant.SERVER))
+    except Exception:
+        pass
+    try:
+        r = (ps or subprocess.run)(['powershell', '-NoProfile', '-NonInteractive', '-Command',
+                                    "@(Get-CimInstance Win32_Process -Filter \"Name like 'python%'\" | Where-Object { $_.CommandLine -like '*mcp_server.py*' }).Count"],
+                                   capture_output=True, text=True, timeout=20, creationflags=rc.NOWIN)
+        out['running'] = int((r.stdout or '0').strip().splitlines()[-1])
+    except Exception:
+        pass
+    return out
+
+
 def restart_kw(env=None):
     """Popen arguments for starting Shadow again from inside Shadow: its own environment without PyInstaller's markers of
     this process, plus PYINSTALLER_RESET_ENVIRONMENT=1, so a new onefile exe unpacks itself instead of using our temp folder."""

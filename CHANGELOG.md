@@ -3,6 +3,22 @@
 Every release is on the [Releases](../../releases) page with its `Seekframe-<version>-Setup.exe`. Installed copies update
 themselves: Seekframe shows **Update to vX.Y** when a new release is out.
 
+## 3.30
+- **The render options are back on the Queue page**: Quality, Format, Sound, Capture and Blender sit right under the table.
+  *Save to* and *Folder* are in Settings.
+- **Settings > Save videos to**: buttons for the cloud folders found on your PC (OneDrive, Google Drive, Dropbox, iCloud), a
+  note for a NAS (`\NAS\Videos` or a mapped drive) and **Check access**, which tests that Seekframe can write there and
+  shows the free space.
+- **Settings > Claude connection (MCP)**: green lights when Claude Code is installed, Seekframe is set up for it, and an MCP
+  connection is open right now (with how many).
+- **Settings > AI account**: the AI features use your Claude subscription by default. Anyone without one can choose **their
+  own Anthropic API key** instead (Seekframe asks first, because every request is then billed by Anthropic). The key is
+  stored encrypted by Windows for your account only, is never shown again in full, and is used only in that mode.
+
+## 3.29
+- **Smoother page switching**: the Queue / Settings / About pages are built once and only brought to the front, instead
+  of being rebuilt on every click (measured in 3.29: 117 ms -> about 65 ms per switch on average; with the options back on the Queue page in 3.30 it is about 95 ms).
+
 ## 3.28
 - **A calmer window with a sidebar**: Queue, New video, AI tools, YouTube, Project and Assistant on the left; the
   render options, the setup check and the language moved to their own **Settings** page, so the Queue page shows just

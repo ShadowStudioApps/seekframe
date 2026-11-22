@@ -55,11 +55,15 @@ Only what you read changes: settings, projects, file names and the log stay the 
 The window has a **sidebar** on the left and the open page on the right. The ☰ button at the top hides or shows the
 sidebar (Seekframe remembers it).
 
-- **Queue**: your scenes, the Render buttons and the progress. The grey line under the table sums up the render options;
-  click it to change them.
+- **Queue**: your scenes, the render options (Quality, Format, Sound, Capture, Blender), the Render buttons and the progress.
 - **New video**, **AI tools**, **YouTube...**, **Project** and **Assistant** open those windows or menus.
-- **Settings** (bottom): quality, format, sound, capture, Blender, where to save, the setup check (Chrome, ffmpeg,
-  Playwright, Blender) with *Install missing* and *Self-test*, and the language.
+- **Settings** (bottom):
+  - *Save videos to*: the folder (a cloud-folder button for each OneDrive / Google Drive / Dropbox / iCloud folder found; a NAS
+    works too, e.g. `\NAS\Videos`), the Folder rule, and **Check access** (can Seekframe write there, how much space is free).
+  - *Setup*: Chrome, ffmpeg, Playwright, Blender, with *Install missing* and *Self-test*.
+  - *Claude connection (MCP)*: green when Claude Code is installed, Seekframe is set up for it, and a connection is open now.
+  - *AI account*: your Claude subscription (default), or your own Anthropic API key (paid per use; stored encrypted).
+  - *Language*.
 - **About** (bottom, picture below): the version, Shadow Studio, and links to the GitHub page, this guide, what's new, the privacy
   policy and *Report a problem*.
 - **Check for updates** is at the bottom of the sidebar; it becomes *Update to vX.Y* when a new version is out.

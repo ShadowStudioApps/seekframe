@@ -19,6 +19,10 @@ Seekframe touches and where it goes.
 | You press **Fix the scene** in *AI...* | Anthropic, through your own installed Claude Code | The problems shown in the window (including your own words), the scene file and the files it loads that Claude chooses to read. |
 | You press **Write YouTube text** in *AI...* | Anthropic, through your own installed Claude Code | A picture of 12 frames of that video, its file name, your note and the text of its scene. No YouTube or Google data is sent. |
 
+If you choose **your own Anthropic API key** (Settings > AI account), the key is stored on your PC only, encrypted by Windows
+for your account (`%USERPROFILE%\.shadow_ai_key.bin`), and is given to Claude Code only while that option is on, which sends
+it to Anthropic with the AI requests above. **Remove key** deletes the file.
+
 Nothing else is sent anywhere. The AI features run only when you press their buttons, use your own Claude subscription, and are covered by [Anthropic's privacy policy](https://www.anthropic.com/legal/privacy).
 
 ## YouTube and Google user data

@@ -29,7 +29,7 @@ for fn in ('app.py', 'dialogs.py'):
         if isinstance(n, ast.Call) and getattr(n.func, 'id', '') == 'tr' and n.args and isinstance(n.args[0], ast.Constant): ids.add(n.args[0].value)
 BRAND = {'Seekframe', 'Seekframe v{0}', 'Seekframe - {0}', 'YouTube'}
 # 3.28 sidebar / page labels reach tr() through a variable: check them too
-NAV = {'Queue', 'New video', 'AI tools', 'Settings', 'About', 'GitHub page', 'User guide', "What's new", 'Report a problem', 'Privacy policy', 'Shadow Studio', 'by Shadow Studio'}
+NAV = {'Claude Code', 'Seekframe set up for Claude', 'Connected now', 'Queue', 'New video', 'AI tools', 'Settings', 'About', 'GitHub page', 'User guide', "What's new", 'Report a problem', 'Privacy policy', 'Shadow Studio', 'by Shadow Studio'}
 slots = lambda s: sorted(re.findall(r'\{\d*\}', s))
 for code, d in sorted(LOC.items()):
     miss = sorted(i for i in (ids | NAV) - BRAND if i not in d)

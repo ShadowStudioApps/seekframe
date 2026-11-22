@@ -59,10 +59,54 @@ def find_claude(env=None):
     return None
 
 
-def clean_env(env=None):
-    """The environment for Claude Code: without API keys / cloud-provider switches (they would bill per use)."""
+# ---- 3.30: how the AI features sign in. 'subscription' (default): the user's Claude subscription through Claude Code; API keys
+# and cloud switches are removed so nothing is billed per use. 'api_key' (a user's explicit choice in Settings): Claude Code
+# runs with the user's own Anthropic API key (paid per use, by Anthropic) - kept encrypted by Windows (DPAPI) in KEY_FILE.
+AUTH_MODE = 'subscription'
+KEY_FILE = os.path.join(os.path.expanduser('~'), '.shadow_ai_key.bin')
+
+def _dpapi(data, decrypt=False):
+    """Windows DPAPI for the current user (only this Windows account on this PC can decrypt it)."""
+    import ctypes, ctypes.wintypes as wt
+    class BLOB(ctypes.Structure): _fields_ = [('cbData', wt.DWORD), ('pbData', ctypes.POINTER(ctypes.c_char))]
+    buf = ctypes.create_string_buffer(data, len(data)); inp = BLOB(len(data), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char))); out = BLOB()
+    fn = ctypes.windll.crypt32.CryptUnprotectData if decrypt else ctypes.windll.crypt32.CryptProtectData
+    if not fn(ctypes.byref(inp), None, None, None, None, 0x1, ctypes.byref(out)):   # 0x1 = CRYPTPROTECT_UI_FORBIDDEN
+        raise OSError('Windows could not ' + ('decrypt' if decrypt else 'encrypt') + ' the API key')
+    try: return ctypes.string_at(out.pbData, out.cbData)
+    finally: ctypes.windll.kernel32.LocalFree(out.pbData)
+
+def valid_api_key(key):
+    return isinstance(key, str) and key.strip().startswith('sk-ant-') and len(key.strip()) > 30 and ' ' not in key.strip()
+
+def save_api_key(key, path=None):
+    """Store the key encrypted (DPAPI). Raises ValueError for something that is not an Anthropic key."""
+    key = (key or '').strip()
+    if not valid_api_key(key): raise ValueError('That does not look like an Anthropic API key (it starts with sk-ant-).')
+    with open(path or KEY_FILE, 'wb') as f: f.write(_dpapi(key.encode('utf-8')))
+
+def load_api_key(path=None):
+    try:
+        with open(path or KEY_FILE, 'rb') as f: return _dpapi(f.read(), decrypt=True).decode('utf-8')
+    except Exception:
+        return None
+
+def delete_api_key(path=None):
+    try: os.remove(path or KEY_FILE); return True
+    except OSError: return False
+
+def key_hint(key):
+    """sk-ant-...abcd: enough to recognise a key, never the key itself."""
+    return f'{key[:7]}...{key[-4:]}' if key else ''
+
+def clean_env(env=None, mode=None):
+    """The environment for Claude Code. Subscription (default): without API keys / cloud-provider switches (they would bill
+    per use). API-key mode: the same, plus the user's own stored key as ANTHROPIC_API_KEY."""
     e = dict(os.environ if env is None else env)
     for k in PAID_ENV: e.pop(k, None)
+    if (mode or AUTH_MODE) == 'api_key':
+        key = load_api_key()
+        if key: e['ANTHROPIC_API_KEY'] = key
     return e
 
 
@@ -83,6 +127,10 @@ def check_ready(exe, run=subprocess.run, env=None):
     """(ok, message). Uses `claude auth status --json` (exit 0 = signed in). Refuses API-key / cloud-provider sign-ins:
     the assistant must use the subscription, never a paid API."""
     if not exe: return False, NOT_INSTALLED
+    if AUTH_MODE == 'api_key':   # the user chose their own API key in Settings (paid per use)
+        key = load_api_key()
+        if not key: return False, 'API key mode is on but no key is saved. Open Settings > AI account and add your key, or switch back to your subscription.'
+        return True, f'Claude Code with your Anthropic API key {key_hint(key)} (paid per use)'
     try:
         r = run(cmd(exe) + ['auth', 'status', '--json'], capture_output=True, text=True, encoding='utf-8', errors='replace',
                 timeout=30, env=clean_env(env), creationflags=NOWIN)
