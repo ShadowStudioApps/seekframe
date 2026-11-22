@@ -3,6 +3,16 @@
 Every release is on the [Releases](../../releases) page with its `Seekframe-<version>-Setup.exe`. Installed copies update
 themselves: Seekframe shows **Update to vX.Y** when a new release is out.
 
+## 3.33
+- **Cloud accounts without their apps** (Settings > *Cloud accounts*): sign in to Google Drive, OneDrive, Dropbox, Box or
+  pCloud in your browser (Seekframe never sees the password). Uses rclone (free, open source); *Get rclone* downloads the
+  official release and checks it. The sign-ins are kept encrypted for your Windows account only.
+- **Queue > Cloud...**: browse a signed-in account and add scenes, videos or whole folders. A scene brings its whole folder
+  (song, voice, pictures) into `Videos\Seekframe cloud\<account>\...`; at the top of an account only the file you picked.
+- **Also upload finished videos to** an account: each finished video (and its subtitles / thumbnail) goes to
+  `Seekframe/<same folders as on your PC>` there, in the background, while the next render runs.
+- **Cloud...** sits in the sidebar; the **Settings page scrolls** and the window is never taller than the screen.
+
 ## 3.32
 - **Settings > AI connections** (was *Claude connection*): every AI app found on your PC (Claude Code, Claude Desktop,
   Cursor, VS Code Copilot, Windsurf / Devin, Gemini CLI, Codex) has a tick box. Tick it and Seekframe sets itself up in

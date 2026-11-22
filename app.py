@@ -11,6 +11,7 @@ import updater
 import assistant
 import ai_clients   # 3.32: AI apps that can use Seekframe (MCP), connect / disconnect
 import ai_tasks
+import cloud   # 3.33: cloud accounts through rclone (sign in, browse, download, upload)
 import video_song as vsong
 import i18n
 from i18n import t as tr   # 3.20: the UI language (locales/<code>.json); keys and the log stay English
@@ -568,6 +569,8 @@ class App(Root):
         self.cfg_ai = dict(cfg.get('ai') or {})
         assistant.AUTH_MODE = 'api_key' if self.cfg_ai.get('auth') == 'api_key' else 'subscription'
         ai_tasks.ENGINE = self.cfg_ai.get('engine') if self.cfg_ai.get('engine') in ai_tasks.ENGINES else 'claude'   # 3.32
+        self.cloud_up = cfg.get('cloud_upload') if cfg.get('cloud_upload') in cloud.LABEL else ''   # 3.33: upload finished videos there
+        self.upload_q = None   # 3.33: the cloud upload thread's queue (made on the first upload)
         self._using_prev = None   # 3.32: AI apps using Seekframe at the last check (a new one -> notification)   # 3.30 Settings > AI account   # New video (AI): style, length, voice, dir, voice_python (3.19)
         self.row_problems = {}   # path -> what went wrong last (render error + log, QC, Check frames): the AI window starts from it
         f = cfg.get('format'); self.fmt = tk.StringVar(value=f if f in FORMAT_CHOICES else '16:9 (YouTube)')
@@ -590,7 +593,8 @@ class App(Root):
         rw, rh = self.winfo_reqwidth(), self.winfo_reqheight()
         # (the pages share one grid cell, so the window already asks for the tallest one)
         w, h = max(rw, int(self.winfo_fpixels('8i'))), rh + int(self.winfo_fpixels('0.3i'))
-        self.minsize(rw, rh); self.geometry(f'{w}x{h}')
+        h = min(h, self.winfo_screenheight() - int(self.winfo_fpixels('0.9i')))   # 3.33: never taller than the screen (taskbar)
+        self.minsize(rw, min(rh, h)); self.geometry(f'{w}x{h}')
         self._poll_id = self.after(150, self.poll)
         self.update_rel = None; self.update_busy = False; self.update_checking = False
         self.update_seen = cfg.get('update_seen')   # 3.31: the version the Windows notification was shown for
@@ -674,7 +678,7 @@ class App(Root):
     # ------------------------------------------------------------------ layout (3.28: sidebar + pages)
     # Icons from Windows' own icon font (Segoe Fluent Icons on Windows 11, Segoe MDL2 Assets on 10); text only without them.
     NAV_ICONS = {'menu': '', 'queue': '', 'new': '', 'ai': '', 'youtube': '', 'project': '',
-                 'assistant': '', 'settings': '', 'about': ''}
+                 'cloud': '', 'assistant': '', 'settings': '', 'about': ''}
     SIDE_COLORS = {'dark': dict(bg='#191b1f', hover='#262a31', sel='#2f3640', fg='#c8ccd4', fg_sel='#ffffff', muted='#7d8491', line='#2a2e35'),
                    'light': dict(bg='#e4e4e2', hover='#d8d8d5', sel='#cdd5e3', fg='#2b2b2b', fg_sel='#101010', muted='#6b6b6b', line='#d0d0cc')}
 
@@ -696,13 +700,13 @@ class App(Root):
         self.side_title = tk.Label(brand, text='Seekframe', font='SunValleySubtitleFont', anchor='w'); self.side_title.pack(fill='x')
         self.side_ver = tk.Label(brand, text=f'v{rc.VERSION}', anchor='w'); self.side_ver.pack(fill='x')
         for key, text, cmd in (('queue', 'Queue', lambda: self.show_page('queue')), ('new', 'New video', self.open_new_video),
-                               ('ai', 'AI tools', self.open_ai), ('youtube', 'YouTube...', self.open_youtube_dialog),
+                               ('ai', 'AI tools', self.open_ai), ('youtube', 'YouTube...', self.open_youtube_dialog), ('cloud', 'Cloud...', self.open_cloud),
                                ('project', 'Project', self.project_menu), ('assistant', 'Assistant', self.toggle_assistant)):
             self._nav_item(key, tr(text), cmd)
         self._studio_mark(k)   # 3.31: Shadow Studio at the very bottom
         for key, text in (('about', 'About'), ('settings', 'Settings')):
             self._nav_item(key, tr(text), lambda k_=key: self.show_page(k_), side='bottom')
-        self.ai_btn = self.nav['assistant']; self.proj_btn = self.nav['project']; self.new_btn = self.nav['new']
+        self.ai_btn = self.nav['assistant']; self.proj_btn = self.nav['project']; self.new_btn = self.nav['new']; self.cloud_btn = self.nav['cloud']   # 3.33: in the sidebar (the queue row stays narrow)
 
         # ---- header of the page area: menu button, page title, theme
         hdr = ttk.Frame(self.body); hdr.pack(fill='x', padx=P, pady=(P, 6))
@@ -791,7 +795,7 @@ class App(Root):
             ttk.Checkbutton(chk, text=tr(t), variable=v).pack(side='left', padx=(0, 18))
 
         # ==== Settings page: where videos go (PC, NAS, cloud), setup, Claude (MCP), AI account, language
-        sp = self.pages['settings']
+        sp = self._scroll_page(self.pages['settings'])   # 3.33: Settings scrolls (it is taller than a laptop screen)
         op = ttk.LabelFrame(sp, text=tr('Save videos to'), padding=10); op.pack(fill='x', padx=P, pady=(4, 10))
         ttk.Label(op, text=tr('Save to')).grid(row=0, column=0, sticky='w', pady=3)
         ttk.Entry(op, textvariable=self.out_dir).grid(row=0, column=1, columnspan=2, sticky='we', padx=10, pady=3)
@@ -814,6 +818,25 @@ class App(Root):
                                      foreground='#888', wraplength=round(700 * k), justify='left')
         self.storage_lbl.grid(row=3, column=1, columnspan=3, sticky='w', padx=10, pady=(6, 0))
         op.columnconfigure(2, weight=1)
+        # 3.33 cloud accounts: sign in in the browser (rclone), no cloud app needed; upload finished videos there
+        ca = ttk.LabelFrame(sp, text=tr('Cloud accounts'), padding=10); ca.pack(fill='x', padx=P, pady=(0, 10))
+        self.cloud_note = ttk.Label(ca, text='', foreground='#888', wraplength=round(700 * k), justify='left'); self.cloud_note.pack(anchor='w')
+        self.rclone_btn = ttk.Button(ca, text=tr('Get rclone (free, about 30 MB)'), command=self.get_rclone)
+        cg = ttk.Frame(ca); cg.pack(fill='x', pady=(6, 0))
+        self.cloud_rows = {}
+        for i, (key_, label, _t, _x) in enumerate(cloud.PROVIDERS):
+            ttk.Label(cg, text=label).grid(row=i // 2, column=(i % 2) * 3, sticky='w', pady=2)
+            st = ttk.Label(cg, text='', foreground='#888', width=26); st.grid(row=i // 2, column=(i % 2) * 3 + 1, sticky='w', padx=(8, 4))
+            b = ttk.Button(cg, text=tr('Sign in'), width=10, command=lambda k_=key_: self.cloud_toggle(k_))
+            b.grid(row=i // 2, column=(i % 2) * 3 + 2, sticky='w', padx=(0, 24), pady=2)
+            self.cloud_rows[key_] = dict(st=st, btn=b)
+        ur = ttk.Frame(ca); ur.pack(fill='x', pady=(8, 0))
+        ttk.Label(ur, text=tr('Also upload finished videos to')).pack(side='left')
+        self.cloud_up_box = ttk.Combobox(ur, state='readonly', width=18); self.cloud_up_box.pack(side='left', padx=8)
+        self.cloud_up_box.bind('<<ComboboxSelected>>', lambda e: self.on_cloud_up())
+        ttk.Label(ur, text=tr('(folder Seekframe in that account)'), foreground='#888').pack(side='left')
+        self.cloud_accounts = {}
+        self.after(800, self.refresh_cloud)
         su = ttk.LabelFrame(sp, text=tr('Setup'), padding=10); su.pack(fill='x', padx=P, pady=(0, 10))
         env = ttk.Frame(su); env.pack(fill='x')
         self.env_lbls = {}
@@ -969,11 +992,31 @@ class App(Root):
         bg = c['sel'] if self._nav_selected(row.key) else (c['hover'] if on else c['bg'])
         for w in row.parts: w.config(background=bg)
 
+    def _scroll_page(self, outer):
+        """A page that scrolls: a Canvas + scrollbar in `outer`, returns the frame to fill. The mouse wheel scrolls it while
+        the pointer is over it. Its height never decides the window's height (the Queue page does)."""
+        cv = tk.Canvas(outer, highlightthickness=0, bd=0, height=200)
+        vs = ttk.Scrollbar(outer, orient='vertical', command=cv.yview); cv.configure(yscrollcommand=vs.set)
+        vs.pack(side='right', fill='y'); cv.pack(side='left', fill='both', expand=True)
+        inner = ttk.Frame(cv); win = cv.create_window(0, 0, window=inner, anchor='nw')
+        inner.bind('<Configure>', lambda e: cv.configure(scrollregion=cv.bbox('all'), width=inner.winfo_reqwidth()))
+        cv.bind('<Configure>', lambda e: cv.itemconfigure(win, width=e.width))
+        def wheel(e):
+            if cv.yview() != (0.0, 1.0): cv.yview_scroll(int(-e.delta / 120) or (-1 if e.delta > 0 else 1), 'units')
+        cv.bind('<Enter>', lambda e: cv.bind_all('<MouseWheel>', wheel)); cv.bind('<Leave>', lambda e: cv.unbind_all('<MouseWheel>'))
+        self.scroll_canvases = getattr(self, 'scroll_canvases', []) + [cv]
+        self.settings_canvas = cv
+        return inner
+
     def side_colors(self):
         """Paint the sidebar for the current theme (a plain Tk frame: sv-ttk does not colour it)."""
         if not hasattr(self, 'side'): return
         c = self.SIDE_COLORS['dark' if self.theme == 'dark' else 'light']
         self.side.config(background=c['bg'])
+        try:
+            bg = ttk.Style(self).lookup('TFrame', 'background') or None
+            for cv in getattr(self, 'scroll_canvases', []): cv.config(background=bg)
+        except tk.TclError: pass
         for w in self.side.winfo_children():
             if isinstance(w, tk.Frame) and not hasattr(w, 'key'):
                 w.config(background=c['bg'])
@@ -1115,6 +1158,104 @@ class App(Root):
         if changed:
             (toast or notify)(tr('AI connected'), tr("{0} now does Seekframe's AI jobs.", ai_tasks.ENGINES[want]))
         return True
+
+    # ------------------------------------------------------------------ cloud accounts (3.33, cloud.py / rclone)
+    def refresh_cloud(self, wait=False, rc=None):
+        """Which accounts are signed in (+ the user's e-mail): rclone in a thread, then show_cloud on the Tk thread."""
+        rc = rc or cloud.Rclone()
+        def run():
+            if not rc.ok(): self.q.put(('cloud', None, {})); return
+            try:
+                acc = rc.accounts(); who = {k: rc.who(k) for k in acc}
+            except Exception as e:
+                log.warning('cloud accounts: %s', e); acc, who = {}, {}
+            self.q.put(('cloud', True, {k: who.get(k, '') for k in acc}))
+        if wait: run(); return None
+        threading.Thread(target=run, daemon=True).start()
+
+    def show_cloud(self, have_rclone, accounts):
+        if not hasattr(self, 'cloud_rows'): return
+        self.cloud_accounts = accounts
+        if not have_rclone:
+            self.cloud_note.config(text=tr('Sign in to Google Drive, OneDrive, Dropbox, Box or pCloud without their apps. This uses rclone (free, open source), which Seekframe can download for you.'))
+            if not self.rclone_btn.winfo_manager(): self.rclone_btn.pack(anchor='w', pady=(6, 0), before=self.cloud_rows['drive']['st'].master)
+        else:
+            self.rclone_btn.pack_forget()
+            self.cloud_note.config(text=tr('Sign in once in your browser; Seekframe never sees your password. Then use Cloud... in the sidebar to add files from there.'))
+        for key, row in self.cloud_rows.items():
+            on = key in accounts
+            row['st'].config(text=(accounts[key] or tr('Signed in')) if on else tr('Not signed in'), foreground='#3fb950' if on else '#888')
+            row['btn'].config(text=tr('Sign out') if on else tr('Sign in'), state='normal' if have_rclone else 'disabled')
+        names = [tr('Off')] + [cloud.LABEL[k] for k, _, _, _ in cloud.PROVIDERS if k in accounts]
+        self.cloud_up_box.config(values=names)
+        if self.cloud_up and self.cloud_up not in accounts: self.cloud_up = ''
+        self.cloud_up_box.set(cloud.LABEL[self.cloud_up] if self.cloud_up else tr('Off'))
+
+    def on_cloud_up(self):
+        lbl = self.cloud_up_box.get()
+        self.cloud_up = next((k for k, l in cloud.LABEL.items() if l == lbl), ''); self.save()
+
+    def get_rclone(self, fetch=None, wait=False):
+        """Download rclone (official release, SHA-256 checked) into %LOCALAPPDATA%\\Seekframe\\rclone."""
+        self.rclone_btn.state(['disabled']); self.cloud_note.config(text=tr('Downloading rclone...'), foreground='#888')
+        def run():
+            try: cloud.get_rclone(gh=fetch); msg = None
+            except Exception as e: msg = str(e)
+            self.q.put(('cloud_msg', tr('rclone is ready.') if not msg else tr('Could not get rclone: {0}', msg)))
+            self.rclone_btn.state(['!disabled']); self.refresh_cloud()
+        if wait: run(); return None
+        threading.Thread(target=run, daemon=True).start()
+
+    def cloud_toggle(self, key, rc=None, wait=False, toast=None):
+        """Sign in (opens the browser) or sign out of one provider."""
+        rc = rc or cloud.Rclone(); row = self.cloud_rows[key]; label = cloud.LABEL[key]
+        if key in self.cloud_accounts:
+            row['btn'].state(['disabled'])
+            def out():
+                rc.sign_out(key); self.q.put(('cloud_msg', tr('Signed out of {0}.', label))); self.refresh_cloud(rc=rc)
+            if wait: out()
+            else: threading.Thread(target=out, daemon=True).start()
+            return
+        row['btn'].state(['disabled']); row['st'].config(text=tr('Sign in in your browser...'), foreground='#d29922')
+        def run():
+            ok, msg = rc.sign_in(key)
+            if ok: (toast or notify)(tr('Seekframe connected'), tr('{0} is connected to Seekframe.', label))
+            self.q.put(('cloud_msg', tr('{0} is connected to Seekframe.', label) if ok else tr('{0}: {1}', label, msg)))
+            self.refresh_cloud(rc=rc)
+        if wait: run(); return None
+        threading.Thread(target=run, daemon=True).start()
+
+    def open_cloud(self):
+        if not cloud.find_rclone() or not self.cloud_accounts:
+            self.show_page('settings'); self.status.config(text=tr('Sign in to a cloud account first (Settings > Cloud accounts).')); return None
+        return CloudDialog(self, accounts=self.cloud_accounts)
+
+    def cloud_upload(self, mp4, out_dir, rc=None, wait=False):
+        """Queue one finished video (+ its subtitles and thumbnail) for upload to the chosen account, folder
+        Seekframe/<same folders as under Save to>. One upload thread, in order; the render queue never waits for it."""
+        key = self.cloud_up
+        if not key: return
+        import queue as _qm
+        if self.upload_q is None:
+            self.upload_q = _qm.Queue()
+            def worker():
+                while True:
+                    job = self.upload_q.get()
+                    if job is None: return
+                    m, od, k, r_ = job
+                    r_ = r_ or cloud.Rclone()
+                    extra = [x for x in (os.path.splitext(m)[0] + '.srt',) + tuple(glob.glob(glob.escape(os.path.splitext(m)[0]) + '_thumb*.jpg')) if os.path.isfile(x)]
+                    dest = cloud.upload_dir(od, m)
+                    ok, msg = r_.upload(m, k, dest)
+                    for x in extra:
+                        if ok: r_.upload(x, k, dest)
+                    log.info('cloud upload %s -> %s:%s %s', m, k, dest, 'ok' if ok else msg)
+                    self.q.put(('cloud_msg', tr('Uploaded {0} to {1}.', os.path.basename(m), cloud.LABEL[k]) if ok
+                                else tr('Upload to {0} failed: {1}', cloud.LABEL[k], msg)))
+                    self.upload_q.task_done()
+            self.upload_thread = threading.Thread(target=worker, daemon=True); self.upload_thread.start()
+        self.upload_q.put((mp4, out_dir, key, rc))
+        if wait: self.upload_q.join()
 
     def _key_status(self):
         key = assistant.load_api_key()
@@ -1510,7 +1651,7 @@ class App(Root):
                   'skip_done': self.skip_done.get(), 'notify': self.notify.get(),
                   'folder': self.folder_choice.get(), 'folders': self.folders,
                   'assistant_open': self.ai_open, 'assistant_dir': self.ai_dir_choice, 'sidebar': getattr(self, 'side_open', True), 'ai': getattr(self, 'cfg_ai', {}),
-                  'language': getattr(self, 'lang_choice', 'auto'), 'update_seen': getattr(self, 'update_seen', None),
+                  'language': getattr(self, 'lang_choice', 'auto'), 'update_seen': getattr(self, 'update_seen', None), 'cloud_upload': getattr(self, 'cloud_up', ''),
                   'capture': self.capture.get(), 'blender_engine': self.bl_engine.get(), 'sound': self.snd.get(), 'sound_file': self.snd_file.get(), **({'theme': self.theme_choice} if self.theme_choice else {})})
     def on_close(self):
         self.do_cancel(); self.save()
@@ -1626,6 +1767,8 @@ class App(Root):
         if store is not None and r['status'] in ('done', 'skipped') and r.get('mp4'):
             lst = store.setdefault(f, [])
             if r['mp4'] not in lst: lst.append(r['mp4'])
+        if r['status'] == 'done' and r.get('mp4') and getattr(self, 'cloud_up', ''):
+            self.cloud_upload(r['mp4'], out)   # 3.33: in its own thread, the next render starts right away
         self.q.put(('row', f, r['row'], r['dur']))
 
     # ------------------------------------------------------------------ time estimate (Time column + the line under the bar)
@@ -1710,6 +1853,10 @@ class App(Root):
                     self.show_mcp(m[1])
                 elif m[0] == 'client_done':
                     self.client_done(*m[1:])
+                elif m[0] == 'cloud':
+                    self.show_cloud(*m[1:])
+                elif m[0] == 'cloud_msg':
+                    self.status.config(text=m[1])
                 elif m[0] == 'check_status':
                     self.status.config(text=m[1])
                 elif m[0] == 'check_end':
@@ -2277,7 +2424,7 @@ def main():
         log.critical('crash\n%s', traceback.format_exc()); raise
 
 
-from dialogs import AIWindow, CheckWindow, NarrationDialog, NewVideoDialog, YouTubeDialog   # noqa: E402,F401  (3.16: dialogs.py; AIWindow 3.19)
+from dialogs import AIWindow, CheckWindow, CloudDialog, NarrationDialog, NewVideoDialog, YouTubeDialog   # noqa: E402,F401  (3.16: dialogs.py; AIWindow 3.19)
 
 if __name__ == '__main__':
     main()

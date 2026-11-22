@@ -61,6 +61,9 @@ sidebar (Seekframe remembers it).
   - *Save videos to*: the folder (buttons for This PC, OneDrive, Google Drive, Dropbox, iCloud Drive, Box and
     *Network drive (NAS)...*; one that is not found asks for its folder), the Folder rule, and **Check access** (can Seekframe write there, how much space is free).
   - *Setup*: Chrome, ffmpeg, Playwright, Blender, with *Install missing* and *Self-test*.
+  - *Cloud accounts*: sign in to Google Drive, OneDrive, Dropbox, Box or pCloud in your browser (no cloud app needed;
+    it uses rclone, which *Get rclone* downloads for you). Then **Cloud...** in the Queue adds files from there (a scene
+    brings its whole folder), and *Also upload finished videos to* sends each finished video to `Seekframe/...` there.
   - *AI connections*: a tick box for every AI app on this PC (Claude Code, Claude Desktop, Cursor, VS Code Copilot,
     Windsurf / Devin, Gemini CLI, Codex). Tick one and Seekframe sets itself up in that app (restart the app if it is
     open); green = connected, *In use now* = it is running Seekframe. Windows shows a notification when one connects.

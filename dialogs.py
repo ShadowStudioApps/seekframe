@@ -565,3 +565,143 @@ class NewVideoDialog:
     def close(self):
         if self.thread and self.thread.is_alive(): self.stop()
         self.top.destroy()
+
+
+class CloudDialog:
+    """3.33 "Cloud...": browse a signed-in cloud account (cloud.py / rclone) and add scenes or videos to the queue.
+    A chosen file brings its whole folder (a scene needs the song, voice and pictures next to it) into
+    <Videos>\\Seekframe cloud\\<Provider>\\<path>; at the top of an account only the chosen files come (not the whole
+    drive). A chosen folder is downloaded and its scenes are added like Add folder. Listing and downloading run in a
+    thread; open(path) / add() are the handlers (tests call them with wait=True)."""
+    BIG = 1 << 30   # ask before downloading more than 1 GB
+
+    def __init__(self, app, rc=None, accounts=None):
+        import cloud
+        self.app, self.cloud = app, cloud
+        self.rc = rc or cloud.Rclone()
+        accts = accounts if accounts is not None else self.rc.accounts()
+        self.keys = [k for k, _, _, _ in cloud.PROVIDERS if k in accts]
+        self.path = ''; self.items = []; self.busy = False; self.cancel = threading.Event()
+        t = self.top = tk.Toplevel(app); t.title(tr('Add from the cloud')); t.transient(app); t.geometry('760x520'); t.minsize(560, 360)
+        f = ttk.Frame(t, padding=12); f.pack(fill='both', expand=True)
+        top = ttk.Frame(f); top.pack(fill='x')
+        self.acct = tk.StringVar(value=cloud.LABEL[self.keys[0]] if self.keys else '')
+        self.acct_box = ttk.Combobox(top, textvariable=self.acct, values=[cloud.LABEL[k] for k in self.keys], state='readonly', width=18)
+        self.acct_box.pack(side='left'); self.acct_box.bind('<<ComboboxSelected>>', lambda e: self.open(''))
+        ttk.Button(top, text=tr('Up'), command=self.go_up).pack(side='left', padx=6)
+        self.path_lbl = ttk.Label(top, text='/', foreground='#888'); self.path_lbl.pack(side='left', padx=6)
+        box = ttk.Frame(f); box.pack(fill='both', expand=True, pady=8)
+        self.tree = ttk.Treeview(box, columns=('size', 'date'), selectmode='extended')
+        self.tree.heading('#0', text=tr('Name')); self.tree.heading('size', text=tr('Size')); self.tree.heading('date', text=tr('Modified'))
+        self.tree.column('#0', width=420); self.tree.column('size', width=90, anchor='e'); self.tree.column('date', width=140)
+        sb = ttk.Scrollbar(box, orient='vertical', command=self.tree.yview); self.tree.configure(yscrollcommand=sb.set)
+        self.tree.pack(side='left', fill='both', expand=True); sb.pack(side='right', fill='y')
+        self.tree.bind('<Double-1>', lambda e: self.open_selected())
+        self.bar = ttk.Progressbar(f, maximum=1000); self.bar.pack(fill='x')
+        bt = ttk.Frame(f); bt.pack(fill='x', pady=(8, 0))
+        self.status = ttk.Label(bt, text=tr('Pick a scene, a video or a folder. Its whole folder is downloaded with it.'), foreground='#888')
+        self.status.pack(side='left')
+        ttk.Button(bt, text=tr('Close'), command=self.close).pack(side='right')
+        self.add_btn = ttk.Button(bt, text=tr('Add to queue'), style='Accent.TButton', command=self.add); self.add_btn.pack(side='right', padx=6)
+        t.protocol('WM_DELETE_WINDOW', self.close); t.bind('<Escape>', lambda e: self.close())
+        dark_titlebar(t, app.theme == 'dark')
+        if self.keys: self.open('')
+        else: self.status.config(text=tr('Sign in to a cloud account first (Settings > Cloud accounts).'), foreground='#d29922')
+
+    def key(self):
+        return next((k for k in self.keys if self.cloud.LABEL[k] == self.acct.get()), None)
+
+    def _bg(self, work, done, wait=False):
+        """work() in a thread, done(result or exception) back on the Tk thread; wait=True runs both here (tests)."""
+        if wait:
+            try: res = work()
+            except Exception as e: res = e
+            done(res); return
+        def run():
+            try: res = work()
+            except Exception as e: res = e
+            try: self.top.after(0, lambda: done(res))
+            except Exception: pass
+        threading.Thread(target=run, daemon=True).start()
+
+    def open(self, path, wait=False):
+        key = self.key()
+        if not key: return
+        self.status.config(text=tr('Loading...'), foreground='#888')
+        def show(res):
+            if isinstance(res, Exception):
+                self.status.config(text=tr('Could not open the folder: {0}', res), foreground='#f85149'); return
+            self.path, self.items = path, res
+            self.path_lbl.config(text='/' + path)
+            self.tree.delete(*self.tree.get_children())
+            for i, d in enumerate(res):
+                name = ('📁 ' if d.get('IsDir') else '') + d.get('Name', '')
+                size = '' if d.get('IsDir') else _size(d.get('Size', 0))
+                self.tree.insert('', 'end', iid=str(i), text=name, values=(size, (d.get('ModTime') or '')[:16].replace('T', ' ')))
+            self.status.config(text=tr('{0} items', len(res)), foreground='#888')
+        self._bg(lambda: self.rc.listdir(key, path), show, wait)
+
+    def go_up(self):
+        if self.path: self.open('/'.join(self.path.split('/')[:-1]))
+
+    def full(self, d):
+        return f"{self.path}/{d['Name']}" if self.path else d['Name']
+
+    def open_selected(self):
+        sel = self.tree.selection()
+        if len(sel) == 1 and self.items[int(sel[0])].get('IsDir'): self.open(self.full(self.items[int(sel[0])]))
+
+    def add(self, wait=False, ask=None):
+        """Download what is selected and add it to the queue. Returns the local files added (filled when wait=True)."""
+        key = self.key(); items = [self.items[int(i)] for i in self.tree.selection()]
+        if not key or not items or self.busy: return []
+        okext = self.cloud.SCENE_EXT + self.cloud.MEDIA_EXT
+        folders = sorted({self.full(d) for d in items if d.get('IsDir')})
+        files = [self.full(d) for d in items if not d.get('IsDir') and os.path.splitext(d['Name'])[1].lower() in okext]
+        if not folders and not files:
+            self.status.config(text=tr('Pick a scene (.html / .blend), a video or a folder.'), foreground='#d29922'); return []
+        # (remote path, local target, one file?): a file brings its whole folder, except at the top of the account
+        if files and self.path:
+            jobs = [(j, self.cloud.cache_dir(key, j), False) for j in sorted(set(folders) | {self.path})]
+        else:
+            jobs = [(j, self.cloud.cache_dir(key, j), False) for j in folders] + \
+                   [(p, os.path.join(self.cloud.cache_dir(key, ''), os.path.basename(p)), True) for p in files]
+        here = self.cloud.cache_dir(key, self.path)
+        self.busy = True; self.add_btn.state(['disabled']); self.cancel.clear()
+        out = []
+        def work():
+            sizes = [self.rc.size(key, j)[0] for j, _, _ in jobs]; total = sum(sizes)
+            if total > self.BIG and not (ask or (lambda: messagebox.askyesno(tr('Add from the cloud'), tr('This downloads {0}. Continue?', _size(total)), parent=self.top)))():
+                return 'no'
+            base = 0
+            for (j, dest, one), sz in zip(jobs, sizes):
+                if wait: prog = lambda a, b: None
+                else: prog = lambda a, b, base=base: self.top.after(0, lambda: self.bar.config(value=1000 * (base + a) / max(total, 1)))
+                ok, msg = self.rc.copy(f'{key}:{j}', dest, progress=prog, cancel=self.cancel, one_file=one)
+                if not ok: raise RuntimeError(msg)
+                base += sz
+            return 'ok'
+        def finish(res):
+            self.busy = False; self.add_btn.state(['!disabled']); self.bar.config(value=0)
+            if res == 'no': self.status.config(text=tr('Nothing downloaded.'), foreground='#888'); return
+            if isinstance(res, Exception):
+                self.status.config(text=tr('Download failed: {0}', res), foreground='#f85149'); return
+            before = set(self.app.files)
+            for p in files: self.app._add(os.path.join(here, os.path.basename(p)))
+            for d in folders: self.app.add_folder(self.cloud.cache_dir(key, d), ask=ask)
+            out.extend(f for f in self.app.files if f not in before)
+            self.status.config(text=tr('{0} added to the queue.', len(out)), foreground='#3fb950')
+        self._bg(work, finish, wait)
+        return out
+
+    def close(self):
+        self.cancel.set()
+        try: self.top.destroy()
+        except tk.TclError: pass
+
+
+def _size(n):
+    n = float(n or 0)
+    for u in ('B', 'KB', 'MB', 'GB'):
+        if n < 1024 or u == 'GB': return f'{n:.0f} {u}' if u == 'B' else f'{n:.1f} {u}'
+        n /= 1024

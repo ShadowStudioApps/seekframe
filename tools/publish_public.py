@@ -15,7 +15,7 @@ PUBLIC = ['app.py', 'assistant.py', 'docs/ASSISTANT.md', 'render_core.py', 'blen
           'install.bat', 'build_exe.bat', 'build_installer.bat', 'release.bat', 'run.bat', 'publish_update.bat',
           'installer/shadow.iss', 'assets/shadow.ico', 'assets/shadow_1024.png', 'assets/shadow_studio.png', 'docs/screenshot.png',
           'tools/narrate/*', 'tools/publish_public.py', 'tools/publish_update.py', 'tests/*.py', 'tests/fixtures/*', 'tests/fixtures/qc/*',
-          'docs/GUIDE.md', 'youtube.py', 'scene_paths.py', 'projects.py', 'shadow_util.py', 'dialogs.py', 'video_song.py', 'ai_tasks.py', 'ai_clients.py', 'i18n.py', 'locales/*.json', 'assets/ai_template.html', 'docs/YOUTUBE.md', 'docs/PRIVACY.md', 'docs/screenshot_youtube.png']
+          'docs/GUIDE.md', 'youtube.py', 'scene_paths.py', 'projects.py', 'shadow_util.py', 'dialogs.py', 'video_song.py', 'ai_tasks.py', 'ai_clients.py', 'cloud.py', 'i18n.py', 'locales/*.json', 'assets/ai_template.html', 'docs/YOUTUBE.md', 'docs/PRIVACY.md', 'docs/screenshot_youtube.png']
 # matched by PUBLIC but kept private (they need the private channel tools)
 NOT_PUBLIC = ['tests/test_song_structure.py']
 
