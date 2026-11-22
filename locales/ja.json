@@ -366,5 +366,12 @@
  "{0} is not installed. Use Copy install command above, then press Re-check.": "{0} はインストールされていません。上の「インストールコマンドをコピー」を使い、「再チェック」を押してください。",
  "not signed in": "未サインイン",
  "signed in with Google": "Google でサインイン済み",
- "set to an API key in Gemini CLI itself (GEMINI_API_KEY)": "Gemini CLI 自体で API キーに設定済み（GEMINI_API_KEY）"
+ "set to an API key in Gemini CLI itself (GEMINI_API_KEY)": "Gemini CLI 自体で API キーに設定済み（GEMINI_API_KEY）",
+ "Cut": "切り取り",
+ "Copy": "コピー",
+ "Paste": "貼り付け",
+ "Select all": "すべて選択",
+ "Type here what is wrong with the scene...": "シーンの問題点をここに書いてください...",
+ "Type or paste your idea here...": "アイデアをここに入力または貼り付け...",
+ "Type a message for Claude... (Enter sends)": "Claude へのメッセージを入力...（Enter で送信）"
 }

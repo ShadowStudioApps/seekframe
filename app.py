@@ -21,7 +21,7 @@ from scene_paths import *   # noqa: F401,F403  (names, folders, Format / Sound /
 from scene_paths import _WIN_RESERVED, _META_FOLDER, _META_LUFS   # noqa: F401
 from projects import *   # noqa: F401,F403  (.shadow project files)
 from projects import _rel   # noqa: F401
-from shadow_util import dark_titlebar, narrate_module, open_path   # noqa: F401
+from shadow_util import dark_titlebar, edit_bindings, narrate_module, open_path, style_input, style_output   # noqa: F401
 
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -685,6 +685,7 @@ class App(Root):
 
     def build(self):
         P = 14
+        edit_bindings(self, tr)   # 3.35: Ctrl+C/V/X/A/Z on any keyboard layout + right-click Cut/Copy/Paste/Select all, every window
         k = self.winfo_fpixels('1i') / 96
         try:
             import tkinter.font as tkf
@@ -2041,8 +2042,8 @@ class App(Root):
         if not hasattr(self, 'ai_text'): return
         dark = self.theme == 'dark'
         bg, fg = ('#2b2b2b', '#e6e6e6') if dark else ('#ececec', '#1b1b1b')
-        for w in (self.ai_text, self.ai_in):
-            w.configure(background=bg, foreground=fg, insertbackground=fg, selectbackground='#2f6fb5', highlightthickness=0)
+        self.ai_text.configure(background=bg, foreground=fg, insertbackground=fg, selectbackground='#2f6fb5', highlightthickness=0)
+        style_input(self.ai_in, dark, hint=tr('Type a message for Claude... (Enter sends)'))   # 3.35: the box you type in stands out
         t = self.ai_text
         t.tag_configure('you', foreground='#58a6ff' if dark else '#0b57d0', spacing1=8)
         t.tag_configure('claude', spacing1=2)

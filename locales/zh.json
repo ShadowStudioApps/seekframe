@@ -366,5 +366,12 @@
  "{0} is not installed. Use Copy install command above, then press Re-check.": "{0} 未安装。请用上方的“复制安装命令”，然后点击“重新检查”。",
  "not signed in": "未登录",
  "signed in with Google": "已用 Google 登录",
- "set to an API key in Gemini CLI itself (GEMINI_API_KEY)": "已在 Gemini CLI 中设置为 API 密钥（GEMINI_API_KEY）"
+ "set to an API key in Gemini CLI itself (GEMINI_API_KEY)": "已在 Gemini CLI 中设置为 API 密钥（GEMINI_API_KEY）",
+ "Cut": "剪切",
+ "Copy": "复制",
+ "Paste": "粘贴",
+ "Select all": "全选",
+ "Type here what is wrong with the scene...": "在这里写下场景的问题...",
+ "Type or paste your idea here...": "在这里输入或粘贴你的想法...",
+ "Type a message for Claude... (Enter sends)": "给 Claude 写消息...（按 Enter 发送）"
 }

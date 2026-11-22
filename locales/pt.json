@@ -366,5 +366,12 @@
  "{0} is not installed. Use Copy install command above, then press Re-check.": "{0} não está instalado. Use Copiar comando de instalação acima e depois clique em Verificar de novo.",
  "not signed in": "não conectado",
  "signed in with Google": "conectado com o Google",
- "set to an API key in Gemini CLI itself (GEMINI_API_KEY)": "configurado com uma chave de API no próprio Gemini CLI (GEMINI_API_KEY)"
+ "set to an API key in Gemini CLI itself (GEMINI_API_KEY)": "configurado com uma chave de API no próprio Gemini CLI (GEMINI_API_KEY)",
+ "Cut": "Recortar",
+ "Copy": "Copiar",
+ "Paste": "Colar",
+ "Select all": "Selecionar tudo",
+ "Type here what is wrong with the scene...": "Escreva aqui o que está errado na cena...",
+ "Type or paste your idea here...": "Digite ou cole sua ideia aqui...",
+ "Type a message for Claude... (Enter sends)": "Escreva uma mensagem para o Claude... (Enter envia)"
 }

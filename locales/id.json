@@ -366,5 +366,12 @@
  "{0} is not installed. Use Copy install command above, then press Re-check.": "{0} belum terpasang. Pakai Salin perintah instal di atas, lalu tekan Periksa lagi.",
  "not signed in": "belum masuk",
  "signed in with Google": "masuk dengan Google",
- "set to an API key in Gemini CLI itself (GEMINI_API_KEY)": "diatur ke kunci API di Gemini CLI sendiri (GEMINI_API_KEY)"
+ "set to an API key in Gemini CLI itself (GEMINI_API_KEY)": "diatur ke kunci API di Gemini CLI sendiri (GEMINI_API_KEY)",
+ "Cut": "Potong",
+ "Copy": "Salin",
+ "Paste": "Tempel",
+ "Select all": "Pilih semua",
+ "Type here what is wrong with the scene...": "Tulis di sini apa yang salah dengan adegan...",
+ "Type or paste your idea here...": "Ketik atau tempel ide Anda di sini...",
+ "Type a message for Claude... (Enter sends)": "Tulis pesan untuk Claude... (Enter mengirim)"
 }

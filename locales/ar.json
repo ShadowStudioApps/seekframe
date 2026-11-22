@@ -366,5 +366,12 @@
  "{0} is not installed. Use Copy install command above, then press Re-check.": "{0} غير مثبّت. استخدم «نسخ أمر التثبيت» في الأعلى، ثم اضغط «إعادة الفحص».",
  "not signed in": "غير مسجّل الدخول",
  "signed in with Google": "مسجّل الدخول بحساب Google",
- "set to an API key in Gemini CLI itself (GEMINI_API_KEY)": "مضبوط على مفتاح API داخل Gemini CLI نفسه (GEMINI_API_KEY)"
+ "set to an API key in Gemini CLI itself (GEMINI_API_KEY)": "مضبوط على مفتاح API داخل Gemini CLI نفسه (GEMINI_API_KEY)",
+ "Cut": "قص",
+ "Copy": "نسخ",
+ "Paste": "لصق",
+ "Select all": "تحديد الكل",
+ "Type here what is wrong with the scene...": "اكتب هنا ما المشكلة في المشهد...",
+ "Type or paste your idea here...": "اكتب أو الصق فكرتك هنا...",
+ "Type a message for Claude... (Enter sends)": "اكتب رسالة لـ Claude... (Enter للإرسال)"
 }

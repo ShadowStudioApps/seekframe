@@ -366,5 +366,12 @@
  "{0} is not installed. Use Copy install command above, then press Re-check.": "{0} не установлен. Нажмите «Копировать команду установки» выше, затем «Проверить снова».",
  "not signed in": "вход не выполнен",
  "signed in with Google": "вход через Google",
- "set to an API key in Gemini CLI itself (GEMINI_API_KEY)": "в самом Gemini CLI выбран API-ключ (GEMINI_API_KEY)"
+ "set to an API key in Gemini CLI itself (GEMINI_API_KEY)": "в самом Gemini CLI выбран API-ключ (GEMINI_API_KEY)",
+ "Cut": "Вырезать",
+ "Copy": "Копировать",
+ "Paste": "Вставить",
+ "Select all": "Выделить всё",
+ "Type here what is wrong with the scene...": "Напишите здесь, что не так со сценой...",
+ "Type or paste your idea here...": "Введите или вставьте свою идею сюда...",
+ "Type a message for Claude... (Enter sends)": "Напишите сообщение для Claude... (Enter — отправить)"
 }

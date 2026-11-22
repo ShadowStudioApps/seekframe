@@ -366,5 +366,12 @@
  "{0} is not installed. Use Copy install command above, then press Re-check.": "{0} इंस्टॉल नहीं है। ऊपर \"इंस्टॉल कमांड कॉपी करें\" इस्तेमाल करें, फिर \"फिर से जाँचें\" दबाएँ।",
  "not signed in": "साइन इन नहीं",
  "signed in with Google": "Google से साइन इन",
- "set to an API key in Gemini CLI itself (GEMINI_API_KEY)": "Gemini CLI में ही API कुंजी पर सेट (GEMINI_API_KEY)"
+ "set to an API key in Gemini CLI itself (GEMINI_API_KEY)": "Gemini CLI में ही API कुंजी पर सेट (GEMINI_API_KEY)",
+ "Cut": "काटें",
+ "Copy": "कॉपी करें",
+ "Paste": "पेस्ट करें",
+ "Select all": "सब चुनें",
+ "Type here what is wrong with the scene...": "यहाँ लिखें कि सीन में क्या गलत है...",
+ "Type or paste your idea here...": "अपना आइडिया यहाँ लिखें या पेस्ट करें...",
+ "Type a message for Claude... (Enter sends)": "Claude के लिए संदेश लिखें... (Enter भेजता है)"
 }

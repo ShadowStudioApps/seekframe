@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import blender_core as bc
 from scene_paths import scene_for_mp4
-from shadow_util import dark_titlebar, narrate_module, open_path
+from shadow_util import dark_titlebar, narrate_module, open_path, style_input, style_output
 from i18n import t as tr   # 3.20: what the user reads is translated (i18n.py)
 import i18n
 log = logging.getLogger('shadow')
@@ -278,7 +278,8 @@ class AIWindow:
         ttk.Label(f, text=os.path.basename(path), font=('Segoe UI', 11, 'bold')).grid(row=0, column=0, sticky='w')
         ttk.Label(f, text=tr('What is wrong (Seekframe fills in what it found; add your own words, in any language):'),
                   foreground='#888').grid(row=1, column=0, sticky='w', pady=(8, 2))
-        self.note = tk.Text(f, height=5, wrap='word', relief='solid', borderwidth=1, padx=8, pady=6, font='SunValleyBodyFont'); self.note.grid(row=2, column=0, sticky='nsew')
+        self.note = tk.Text(f, height=5, wrap='word', relief='solid', borderwidth=1, padx=8, pady=6, font='SunValleyBodyFont', undo=True); self.note.grid(row=2, column=0, sticky='nsew')
+        style_input(self.note, app.theme == 'dark', hint=tr('Type here what is wrong with the scene...'))
         if problems: self.note.insert('1.0', '\n'.join(f'- {p}' for p in problems))
         bt = ttk.Frame(f); bt.grid(row=3, column=0, sticky='w', pady=8)
         self.fix_btn = ttk.Button(bt, text=tr('Fix the scene'), style='Accent.TButton', command=self.start_fix)
@@ -291,6 +292,7 @@ class AIWindow:
                   foreground='#888').grid(row=4, column=0, sticky='w')
         self.status = ttk.Label(f, text=''); self.status.grid(row=5, column=0, sticky='w', pady=(6, 2))
         self.out = tk.Text(f, height=14, wrap='word', state='disabled', relief='solid', borderwidth=1, padx=8, pady=6, font='SunValleyBodyFont'); self.out.grid(row=6, column=0, sticky='nsew'); f.rowconfigure(6, weight=1)
+        style_output(self.out, app.theme == 'dark')
         ab = ttk.Frame(f); ab.grid(row=7, column=0, sticky='e', pady=(10, 0))
         self.apply_btn = ttk.Button(ab, text=tr('Apply fix'), style='Accent.TButton', command=self.apply); self.apply_btn.pack(side='left')
         self.discard_btn = ttk.Button(ab, text=tr('Discard'), command=self.discard); self.discard_btn.pack(side='left', padx=(6, 0))
@@ -438,7 +440,8 @@ class NewVideoDialog:
         t = self.top = tk.Toplevel(app); t.title(tr('New video (AI)')); t.transient(app); t.minsize(680, 560)
         f = ttk.Frame(t, padding=14); f.pack(fill='both', expand=True); f.columnconfigure(1, weight=1)
         ttk.Label(f, text=tr('Your idea (any language): what the video is about, and anything it must show or say')).grid(row=0, column=0, columnspan=3, sticky='w')
-        self.idea = tk.Text(f, height=4, wrap='word', relief='solid', borderwidth=1, padx=8, pady=6, font='SunValleyBodyFont'); self.idea.grid(row=1, column=0, columnspan=3, sticky='nsew', pady=(2, 8))
+        self.idea = tk.Text(f, height=4, wrap='word', relief='solid', borderwidth=1, padx=8, pady=6, font='SunValleyBodyFont', undo=True); self.idea.grid(row=1, column=0, columnspan=3, sticky='nsew', pady=(2, 8))
+        style_input(self.idea, app.theme == 'dark', hint=tr('Type or paste your idea here...'))   # 3.35: clearly a box to type in
         self.style = tk.StringVar(value=app.cfg_ai.get('style') if app.cfg_ai.get('style') in ai_tasks.STYLES else next(iter(ai_tasks.STYLES)))
         self.length = tk.StringVar(value=app.cfg_ai.get('length') if app.cfg_ai.get('length') in ai_tasks.LENGTHS else '1 minute')
         self.voice = tk.BooleanVar(value=app.cfg_ai.get('voice', True))
@@ -459,6 +462,7 @@ class NewVideoDialog:
         ttk.Label(bt, text=tr('  Claude writes the script and the scene; Seekframe makes the voice and checks every frame.'), foreground='#888').pack(side='left')
         self.status = ttk.Label(f, text=''); self.status.grid(row=7, column=0, columnspan=3, sticky='w')
         self.out = tk.Text(f, height=12, wrap='word', state='disabled', relief='solid', borderwidth=1, padx=8, pady=6, font='SunValleyBodyFont'); self.out.grid(row=8, column=0, columnspan=3, sticky='nsew', pady=(4, 0))
+        style_output(self.out, app.theme == 'dark')   # the progress log: flat, nothing to type in
         f.rowconfigure(8, weight=1)
         ab = ttk.Frame(f); ab.grid(row=9, column=0, columnspan=3, sticky='e', pady=(10, 0))
         self.check_btn = ttk.Button(ab, text=tr('Check frames'), command=self.check, state='disabled'); self.check_btn.pack(side='left')
@@ -466,6 +470,7 @@ class NewVideoDialog:
         ttk.Button(ab, text=tr('Close'), command=self.close).pack(side='left', padx=(6, 0))
         t.protocol('WM_DELETE_WINDOW', self.close); t.bind('<Escape>', lambda e: self.close())
         dark_titlebar(t, app.theme == 'dark')
+        t.after(150, lambda: t.winfo_exists() and self.idea.focus_set())   # the cursor starts in the idea box
         if self.voice_py is None:   # finding a Python with Kokoro takes a few seconds: not on the UI thread
             threading.Thread(target=lambda: self.q.put(('voice', ai_tasks.find_voice_python(app.cfg_ai.get('voice_python')))), daemon=True).start()
         else:

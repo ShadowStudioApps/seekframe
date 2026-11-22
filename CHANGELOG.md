@@ -3,6 +3,13 @@
 Every release is on the [Releases](../../releases) page with its `Seekframe-<version>-Setup.exe`. Installed copies update
 themselves: Seekframe shows **Update to vX.Y** when a new release is out.
 
+## 3.35
+- Every box you can type in now looks like one: a clear border that turns blue while the cursor is in it, its own field
+  colour, and a grey hint while it is empty ("Type or paste your idea here...", the Assistant's message box, the AI note).
+  Read-only boxes (progress logs) stay flat, so nobody types into the wrong one. New video (AI) starts with the cursor in the idea box.
+- Ctrl+V / C / X / A / Z work with an Arabic (or any non-Latin) keyboard layout; right-click on any text field gives
+  Cut / Copy / Paste / Select all.
+
 ## 3.34
 - *Save videos to* keeps only **This PC** and **Network drive (NAS)...** (plus Browse... and Check access): the cloud-app
   buttons from 3.31 are gone. Cloud sign-in stays under *Cloud accounts*, and uploading there stays off unless you pick it.
