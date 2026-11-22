@@ -53,16 +53,21 @@ try:
     check('S7 switching pages stays under 150 ms on average (3.30 measured ~95 ms; the theme draws every widget on show)', ms < 150, f'{ms:.1f} ms')
     called = []
     real = w.toggle_assistant
-    w.geometry('2000x900'); w.update(); w0 = w.winfo_width()
+    w.geometry('+0+0'); w.update()
+    need = w.winfo_reqwidth() + w.ai_frame.winfo_reqwidth() + 14; scr = w.winfo_screenwidth() - 8
+    w.geometry(f'{min(scr, max(need + 40, w.winfo_reqwidth()))}x900'); w.update(); w0 = w.winfo_width()
     w.nav['assistant'].invoke(); w.update()
-    check('S4 opening the Assistant in a wide window does not resize it (3.31: no squeezed table)', w.winfo_width() == w0, f'{w0} -> {w.winfo_width()}')
+    check('S4 opening the Assistant in a wide enough window does not resize it (3.31: no squeezed table)',
+          w.winfo_width() == w0 if w0 >= need else w.winfo_width() <= w.winfo_screenwidth(), f'{w0} -> {w.winfo_width()} (needs {need}, screen {scr + 8})')
     check('S4 the Assistant row opens the panel and is marked', w.ai_open and w._nav_selected('assistant') and w.ai_frame.winfo_manager() == 'pack')
     w.nav['assistant'].invoke(); w.update()
     check('S4 and closes it again, same window width', not w.ai_open and not w._nav_selected('assistant') and w.winfo_width() == w0, w.winfo_width())
     w.geometry(f'{w.winfo_reqwidth()}x900'); w.update(); n0 = w.winfo_width()
     w.toggle_assistant(); w.update()
-    check('S4 a narrow window grows once to fit the panel, the pages keep their width', w.winfo_width() > n0 and w.body.winfo_width() >= w.body.winfo_reqwidth() - 2,
-          f'{n0} -> {w.winfo_width()}, body {w.body.winfo_width()}/{w.body.winfo_reqwidth()}')
+    fits = need <= scr
+    check('S4 a narrow window grows once to fit the panel (pages keep their width when the screen is wide enough), never past the screen',
+          w.winfo_width() > n0 and w.winfo_width() <= w.winfo_screenwidth() and (not fits or w.body.winfo_width() >= w.body.winfo_reqwidth() - 2),
+          f'{n0} -> {w.winfo_width()}, body {w.body.winfo_width()}/{w.body.winfo_reqwidth()}, screen {scr + 8}')
     w.toggle_assistant(); w.update()
     check('S4 and gives the room back on close', abs(w.winfo_width() - n0) <= 2, f'{n0} -> {w.winfo_width()}')
     w.nav['queue'].invoke(); w.update(); check('S4 the Queue row opens the Queue page', w.page == 'queue')
@@ -102,13 +107,13 @@ try:
         check('S11 the About button says Update to v99.0', w.update_btn.cget('text') == 'Update to v99.0')
     finally:
         app.notify = real_notify; w.update_rel = None
-    # S12 (3.31) storage places: This PC + every cloud app (found or not) + NAS
+    # S12 storage places: This PC + NAS (3.34: no cloud-app buttons)
     home = os.path.join(TMP, 'home'); os.makedirs(os.path.join(home, 'Dropbox')); os.makedirs(os.path.join(home, 'Box'))
     pl = app.storage_places({'USERPROFILE': home})
     names = [l for l, _ in pl]
-    check('S12 This PC first, then found clouds, then the others to pick', names[0] == 'This PC' and dict(pl)['Dropbox'] and dict(pl)['Box']
-          and all(n in names for n in app.CLOUD_APPS) and dict(pl)['OneDrive'] is None, pl)
-    check('S12 the Settings page has a button per place + NAS + Check access', len(w.cloud_btns) >= 7 and w.storage_btn.winfo_manager() == 'grid')
+    check('S12 only This PC (the Videos folder), no cloud-app buttons', pl == [('This PC', os.path.join(home, 'Videos'))], pl)
+    check('S12 the Settings page has This PC + NAS + Check access', [b.cget('text') for b in w.cloud_btns] == ['This PC', 'Network drive (NAS)...']
+          and w.storage_btn.winfo_manager() == 'grid')
     picked = os.path.join(TMP, 'nas share'); os.makedirs(picked)
     r = w.use_storage('nas', pick=lambda **k: picked)
     check('S12 NAS asks for the folder and uses it as is', w.out_dir.get() == os.path.normpath(picked) and r and r['ok'], (w.out_dir.get(), r))
@@ -125,7 +130,14 @@ try:
     check('S8 Claude Code: ticked, green, "In use now (2)"', r['claude_code']['var'].get() and str(r['claude_code']['dot'].cget('foreground')) == '#3fb950'
           and r['claude_code']['st'].cget('text') == 'In use now (2)')
     check('S8 Claude Desktop / Gemini / Codex shown, not ticked', all(r[k]['cb'].winfo_manager() == 'grid' and not r[k]['var'].get() for k in ('claude_desktop', 'gemini', 'codex')))
-    check('S8 apps not on this PC: no row, one grey line', not r['cursor']['cb'].winfo_manager() and 'Cursor' in w.cli_missing.cget('text') and 'Windsurf' in w.cli_missing.cget('text'))
+    check('S8 apps not on this PC (3.34): their row stays, tick box off, "Not installed" + Copy install command',
+          r['cursor']['cb'].winfo_manager() == 'grid' and r['cursor']['cb'].instate(['disabled']) and r['cursor']['st'].cget('text') == 'Not installed'
+          and r['cursor']['inst'].winfo_manager() == 'grid' and not r['claude_code']['inst'].winfo_manager())
+    clip = []; w.clipboard_clear = lambda: clip.clear(); w.clipboard_append = lambda x: clip.append(x)   # never the owner's real clipboard
+    cmd = w.copy_install('cursor'); w.update()
+    check('S8 Copy install command puts the winget command on the clipboard and says what to do', cmd == 'winget install -e --id Anysphere.Cursor'
+          and clip == [cmd] and cmd in r['cursor']['st'].cget('text'))
+    w.show_mcp(st, toast=T); check('S8 a re-check keeps the "copied" hint', cmd in r['cursor']['st'].cget('text'))
     check('S8 no notification on the first check', toasts == [])
     st[1] = mk('claude_desktop', True, True, 1); w.show_mcp(st, toast=T); w.update()
     check('S8 an app that starts using Seekframe: one notification', len(toasts) == 1 and 'Claude Desktop is now using Seekframe.' in toasts[0], toasts)
@@ -163,9 +175,9 @@ try:
         check('S10 subscription is the default', w.ai_auth.get() == 'subscription' and assistant.AUTH_MODE == 'subscription')
         w.ai_auth.set('api_key'); w.on_ai_auth(ask=lambda *a: False)
         check('S10 saying No to the cost question keeps the subscription', w.ai_auth.get() == 'subscription' and assistant.AUTH_MODE == 'subscription')
-        w.key_var.set('not a key'); check('S10 a wrong key is refused', w.save_key() is False and not os.path.exists(assistant.KEY_FILE))
+        w.key_var.set('not a key'); check('S10 a wrong key is refused', w.save_key(ask=lambda *a: False) is False and not os.path.exists(assistant.KEY_FILE))
         key = 'sk-ant-api03-' + 'k' * 40 + 'WXYZ'; w.key_var.set(key)
-        check('S10 a key is saved encrypted and cleared from the screen', w.save_key() and w.key_var.get() == ''
+        check('S10 a key is saved encrypted and cleared from the screen', w.save_key(ask=lambda *a: False) and w.key_var.get() == ''
               and key.encode() not in open(assistant.KEY_FILE, 'rb').read() and assistant.load_api_key() == key)
         w.ai_auth.set('api_key'); w.on_ai_auth(ask=lambda *a: True)
         env = assistant.clean_env({'PATH': 'x', 'CLAUDE_CODE_USE_BEDROCK': '1'})
@@ -176,6 +188,42 @@ try:
         w.remove_key()
         check('S10 Remove key: file gone, back to the subscription, no key passed', not os.path.exists(assistant.KEY_FILE)
               and assistant.AUTH_MODE == 'subscription' and 'ANTHROPIC_API_KEY' not in assistant.clean_env({'ANTHROPIC_API_KEY': 'sk-ant-x'}))
+        # S10 (3.34) the sign-in row follows the AI chosen above: Gemini gets its own account / API key choice
+        real_gk = app.ai_tasks.GEMINI_KEY_FILE; app.ai_tasks.GEMINI_KEY_FILE = os.path.join(TMP, 'gkey.bin')
+        try:
+            w.engine.set('gemini'); w.on_engine(ready=lambda c: (True, 'ok'), toast=lambda *a: None)
+            check('S10 Gemini chosen: the row says how Gemini signs in, its own account by default', 'Gemini CLI' in w.auth_title.cget('text')
+                  and w.ai_auth.get() == 'subscription' and app.ai_tasks.GEMINI_AUTH == 'account')
+            os.remove(assistant.KEY_FILE) if os.path.exists(assistant.KEY_FILE) else None
+            ak = 'sk-ant-api03-' + 'a' * 40 + 'ANTH'; w.key_var.set(ak)
+            check('S10 (3.34) an Anthropic key typed while Gemini is chosen is recognised and kept for Claude Code',
+                  w.save_key(ask=lambda *a: False) and assistant.load_api_key() == ak and not os.path.exists(app.ai_tasks.GEMINI_KEY_FILE)
+                  and 'Anthropic' in w.key_lbl.cget('text') and 'Claude Code' in w.key_lbl.cget('text'), w.key_lbl.cget('text'))
+            w.key_var.set('sk-proj-' + 'o' * 40); check('S10 an OpenAI key is refused with the reason', w.save_key(ask=lambda *a: False) is False and 'OpenAI' in w.key_lbl.cget('text'))
+            w.key_var.set('hello'); check('S10 an unknown key is refused, saying what keys look like', w.save_key(ask=lambda *a: False) is False and 'sk-ant-' in w.key_lbl.cget('text') and 'AIza' in w.key_lbl.cget('text'))
+            gk = 'AIza' + 'g' * 35; w.key_var.set(gk)
+            check('S10 a Google AI Studio key is saved encrypted', w.save_key(ask=lambda *a: False) and gk.encode() not in open(app.ai_tasks.GEMINI_KEY_FILE, 'rb').read()
+                  and app.ai_tasks.load_gemini_key() == gk and w.key_var.get() == '')
+            w.ai_auth.set('api_key'); w.on_ai_auth(ask=lambda *a: True)
+            check('S10 Gemini API key mode saved apart from Claude\'s', app.ai_tasks.GEMINI_AUTH == 'api_key' and saved['ai'].get('gemini_auth') == 'api_key'
+                  and assistant.AUTH_MODE == 'subscription')
+            w.show_account('gemini', (True, 'signed in with Google')); w.ai_auth.set('subscription'); w.on_ai_auth()
+            check('S10 sign-in mode shows the AI\'s own sign-in state', 'signed in with Google' in w.key_lbl.cget('text'))
+            ran = []
+            check('S10 Sign in... opens the AI\'s own sign-in in a console window', w.ai_login(popen=lambda c, **k: ran.append((c, k))) and ran
+                  and ran[0][1].get('creationflags') == getattr(app.subprocess, 'CREATE_NEW_CONSOLE', 0) and 'Re-check' in w.key_lbl.cget('text'))
+            w.ai_auth.set('api_key'); w.on_ai_auth(ask=lambda *a: True)
+            w.remove_key()
+            check('S10 Remove key (Gemini): file gone, back to its own sign-in', not os.path.exists(app.ai_tasks.GEMINI_KEY_FILE) and app.ai_tasks.GEMINI_AUTH == 'account')
+            w.engine.set('claude'); w.on_engine(ready=lambda c: (True, 'ok'), toast=lambda *a: None)
+            check('S10 back to Claude Code: the row shows Claude\'s choice again', 'Claude Code' in w.auth_title.cget('text') and w.ai_auth.get() == 'subscription')
+            ran = []; real_cmd = app.ai_tasks.login_command
+            app.ai_tasks.login_command = lambda e: ['claude', 'auth', 'login'] if e == 'claude' else None
+            try: w.ai_login(popen=lambda c, **k: ran.append(c))
+            finally: app.ai_tasks.login_command = real_cmd
+            check('S10 Sign in... for Claude Code runs claude auth login', ran == [['claude', 'auth', 'login']], ran)
+        finally:
+            app.ai_tasks.GEMINI_KEY_FILE = real_gk; app.ai_tasks.GEMINI_AUTH = 'account'; app.ai_tasks.ENGINE = 'claude'
     finally:
         assistant.KEY_FILE = real_key; assistant.AUTH_MODE = 'subscription'
 finally:

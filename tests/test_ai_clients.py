@@ -49,6 +49,8 @@ try:
     check('C2 Cursor: a new file with type stdio', ok and json.load(open(ac.config_path('cursor', ENV)))['mcpServers']['shadow']['type'] == 'stdio')
     ac.connect('vscode', CMD, ENV)
     check('C2 VS Code (Copilot): type stdio + tools *', json.load(open(ac.config_path('vscode', ENV)))['mcpServers']['shadow'].get('tools') == ['*'])
+    ac.disconnect('vscode', ENV)
+    check('C2 (3.34) removing the last server leaves no empty mcpServers section', 'mcpServers' not in json.load(open(ac.config_path('vscode', ENV))))
     ok, msg = ac.disconnect('gemini', ENV); d = json.load(open(g))
     check('C2 disconnect removes only shadow', ok and 'shadow' not in d['mcpServers'] and 'other' in d['mcpServers'] and d['security'], d)
     bad = ac.config_path('claude_desktop', ENV); open(bad, 'w').write('{ not json')
@@ -143,6 +145,38 @@ try:
     check('G2 an error (quota) comes back as the message', not r['ok'] and 'quota' in r['error'], r)
     r = ai.GeminiTask(TMP, [], exe=None, ready=ai.gemini_ready, find=lambda: ai.find_gemini(which=no_which)).ask('x')
     check('G2 Gemini not installed: a clear message', r and not r['ok'] and 'Gemini CLI was not found' in r['error'], r)
+    # G3 (3.34) Gemini with an API key: the key goes in the environment + a system settings file that selects it
+    real_kf = ai.GEMINI_KEY_FILE; ai.GEMINI_KEY_FILE = os.path.join(TMP, 'g.bin')
+    try:
+        ai.GEMINI_AUTH = 'api_key'
+        ok, msg = ai.gemini_ready(['g'])
+        check('G3 API-key mode without a key: not ready, says why', not ok and 'no Gemini API key' in msg)
+        ai.save_gemini_key('AIza' + 'z' * 35)
+        ok, msg = ai.gemini_ready(['g']); check('G3 with a key: ready, only a hint shown', ok and 'z' * 35 not in msg, msg)
+        env = ai.gemini_env(base={'PATH': 'x'}, folder=TMP)
+        sp = env.get('GEMINI_CLI_SYSTEM_SETTINGS_PATH')
+        check('G3 the job gets GEMINI_API_KEY + system settings selecting gemini-api-key (the user\'s settings untouched)',
+              env.get('GEMINI_API_KEY') == 'AIza' + 'z' * 35 and sp and json.load(open(sp))['security']['auth']['selectedType'] == 'gemini-api-key')
+        seen2 = {}
+        lines[:] = [{'type': 'init', 'session_id': 'S3'}, {'type': 'result', 'status': 'success'}]
+        ai.GeminiTask(TMP, [], exe=['g'], popen=lambda a, **k: (seen2.update(k), P(lines))[1], ready=lambda c: (True, '')).ask('x')
+        check('G3 GeminiTask passes that environment', seen2['env'].get('GEMINI_API_KEY', '').startswith('AIza') and 'GEMINI_CLI_SYSTEM_SETTINGS_PATH' in seen2['env'])
+        ai.GEMINI_AUTH = 'account'
+        check('G3 account mode: nothing added', 'GEMINI_CLI_SYSTEM_SETTINGS_PATH' not in ai.gemini_env(base={'PATH': 'x'}, folder=TMP))
+        check('G3 the company is read from the key', [ai.key_provider(k) for k in ('sk-ant-api03-x', 'AIzaSyX', 'sk-proj-x', 'xyz')] == ['anthropic', 'google', 'openai', None])
+        gh = os.path.join(TMP, 'ghome'); os.makedirs(os.path.join(gh, '.gemini'))
+        json.dump({'security': {'auth': {'selectedType': 'oauth-personal'}}}, open(os.path.join(gh, '.gemini', 'settings.json'), 'w'))
+        open(os.path.join(gh, '.gemini', 'google_accounts.json'), 'w').write('{}')
+        check('G3 Gemini sign-in state read from its settings', ai.account_status('gemini', home=gh) == (True, 'signed in with Google'))
+        class R:
+            stdout = json.dumps({'loggedIn': True, 'authMethod': 'claude.ai', 'subscriptionType': 'pro', 'email': 'someone@example.com'})
+        real_find = ai.asst.find_claude; ai.asst.find_claude = lambda: 'claude'
+        try: st = ai.account_status('claude', run=lambda *a, **k: R())
+        finally: ai.asst.find_claude = real_find
+        check('G3 Claude Code sign-in state from claude auth status, never the e-mail', st == (True, 'signed in (Claude Pro)') and 'example.com' not in st[1], st)
+        check('G3 install commands for every app', set(ac.INSTALL) == {c.key for c in ac.CLIENTS} and ac.INSTALL['gemini'].startswith('npm '))
+    finally:
+        ai.GEMINI_KEY_FILE = real_kf; ai.GEMINI_AUTH = 'account'
     try:
         ai.ENGINE = 'gemini'; check('G2 Settings = Gemini -> GeminiTask', isinstance(ai.Task(TMP, []), ai.GeminiTask))
         ai.ENGINE = 'claude'; check('G2 Settings = Claude -> ClaudeTask (default)', isinstance(ai.Task(TMP, []), ai.ClaudeTask))

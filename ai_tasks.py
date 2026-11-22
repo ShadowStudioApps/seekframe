@@ -128,6 +128,94 @@ class ClaudeTask:
 
 
 # ---------------------------------------------------------------- one Gemini CLI job (3.32)
+GEMINI_AUTH = 'account'   # 3.34: 'account' = Gemini CLI's own sign-in, 'api_key' = the Google AI Studio key saved in Seekframe
+GEMINI_KEY_FILE = os.path.join(os.path.expanduser('~'), '.shadow_gemini_key.bin')
+
+
+def valid_gemini_key(key):
+    key = (key or '').strip()
+    return key.startswith('AIza') and len(key) >= 30 and ' ' not in key
+
+
+def save_gemini_key(key, path=None):
+    """Store a Google AI Studio key encrypted for this Windows account (DPAPI). ValueError for something else."""
+    key = (key or '').strip()
+    if not valid_gemini_key(key): raise ValueError('That does not look like a Google AI Studio API key (it starts with AIza).')
+    with open(path or GEMINI_KEY_FILE, 'wb') as f: f.write(asst._dpapi(key.encode('utf-8')))
+
+
+def load_gemini_key(path=None):
+    try:
+        with open(path or GEMINI_KEY_FILE, 'rb') as f: return asst._dpapi(f.read(), decrypt=True).decode('utf-8')
+    except Exception:
+        return None
+
+
+def delete_gemini_key(path=None):
+    try: os.remove(path or GEMINI_KEY_FILE)
+    except OSError: pass
+
+
+def key_provider(key):
+    """Which company an API key belongs to, from its start: 'anthropic' (sk-ant-), 'google' (AIza), 'openai' (sk-), else None."""
+    k = (key or '').strip()
+    if k.startswith('sk-ant-'): return 'anthropic'
+    if k.startswith('AIza'): return 'google'
+    if k.startswith('sk-'): return 'openai'
+    return None
+
+
+def account_status(engine, run=subprocess.run, home=None):
+    """(signed_in True/False/None, short text) of the chosen AI's own sign-in. Claude Code: `claude auth status` (JSON);
+    Gemini CLI: its settings (security.auth.selectedType) + saved Google sign-in. Never shows the e-mail."""
+    home = home or os.path.expanduser('~')
+    try:
+        if engine == 'claude':
+            exe = asst.find_claude()
+            if not exe: return False, 'Claude Code is not installed'
+            r = run(asst.cmd(exe) + ['auth', 'status'], capture_output=True, text=True, timeout=30, creationflags=NOWIN, env=asst.clean_env())
+            d = json.loads(r.stdout or '{}')
+            if not d.get('loggedIn'): return False, 'not signed in'
+            plan = d.get('subscriptionType') or d.get('planTier') or ''
+            return True, 'signed in' + (f' (Claude {plan.capitalize()})' if plan else '') if d.get('authMethod') == 'claude.ai' else 'signed in (' + str(d.get('authMethod')) + ')'
+        g = os.path.join(home, '.gemini')
+        try:
+            with open(os.path.join(g, 'settings.json'), encoding='utf-8') as f: sel = ((json.load(f).get('security') or {}).get('auth') or {}).get('selectedType')
+        except Exception: sel = None
+        if sel == 'oauth-personal' and (glob.glob(os.path.join(g, 'oauth_creds*.json')) or os.path.isfile(os.path.join(g, 'google_accounts.json'))):
+            return True, 'signed in with Google'
+        if sel == 'gemini-api-key': return True, 'set to an API key in Gemini CLI itself (GEMINI_API_KEY)'
+        if sel: return True, f'signed in ({sel})'
+        return False, 'not signed in'
+    except Exception as e:
+        return None, f'could not check ({type(e).__name__})'
+
+
+def login_command(engine):
+    """The command that signs the chosen AI in, run in its own console window: `claude auth login`, or Gemini CLI itself
+    (it asks how to sign in on its first start; /auth changes it later)."""
+    if engine == 'claude':
+        exe = asst.find_claude()
+        return asst.cmd(exe) + ['auth', 'login'] if exe else None
+    return find_gemini()
+
+
+def gemini_env(base=None, folder=None):
+    """The environment for a Gemini job. API-key mode: GEMINI_API_KEY + a system settings file that selects the key
+    (Gemini CLI 0.68 reads security.auth.selectedType from settings BEFORE the environment, so the variable alone does
+    not switch an account sign-in; system settings win over the user's, and the user's file is never changed)."""
+    env = dict(os.environ if base is None else base)
+    if GEMINI_AUTH == 'api_key':
+        key = load_gemini_key()
+        if key:
+            env['GEMINI_API_KEY'] = key
+            if folder:
+                p = os.path.join(folder, 'system-settings.json')
+                with open(p, 'w', encoding='utf-8') as f: json.dump({'security': {'auth': {'selectedType': 'gemini-api-key'}}}, f)
+                env['GEMINI_CLI_SYSTEM_SETTINGS_PATH'] = p
+    return env
+
+
 def find_gemini(which=shutil.which):
     """[node.exe, gemini.js] of the installed Gemini CLI (npm's gemini.cmd only starts node with that script; running the
     script directly keeps the prompt away from cmd.exe's quoting), else [gemini] when only that is found, else None."""
@@ -141,8 +229,12 @@ def find_gemini(which=shutil.which):
 
 
 def gemini_ready(cmd):
-    """(ok, message) like assistant.check_ready: Gemini CLI installed and signed in (it keeps its Google sign-in in ~/.gemini)."""
+    """(ok, message) like assistant.check_ready: Gemini CLI installed and signed in (it keeps its Google sign-in in ~/.gemini),
+    or, in API-key mode, a key saved in Seekframe."""
     if not cmd: return False, 'Gemini CLI was not found. Install it (npm install -g @google/gemini-cli) and sign in once by running gemini.'
+    if GEMINI_AUTH == 'api_key':
+        key = load_gemini_key()
+        return (True, 'Gemini CLI (API key ' + asst.key_hint(key) + ')') if key else (False, 'no Gemini API key saved yet (Settings > AI connections)')
     home = os.path.join(os.path.expanduser('~'), '.gemini')
     if not (os.environ.get('GEMINI_API_KEY') or glob.glob(os.path.join(home, 'oauth_creds*.json')) or os.path.isfile(os.path.join(home, 'google_accounts.json'))):
         return False, 'Gemini CLI is not signed in yet: run gemini once in a terminal and sign in with Google.'
@@ -207,8 +299,9 @@ class GeminiTask:
             self.ready_ok = True
         self.on_event('status', 'Starting Gemini...')
         try:
-            p = self.proc = self.popen(self.args(), cwd=self.cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                       creationflags=NOWIN)
+            args = self.args()
+            p = self.proc = self.popen(args, cwd=self.cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                       creationflags=NOWIN, env=gemini_env(folder=os.path.dirname(self._policy_file())))
         except Exception as e:
             return dict(ok=False, text='', error=f'could not start Gemini CLI: {e}', session_id=None, denials=[])
         err = []

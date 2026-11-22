@@ -3,6 +3,21 @@
 Every release is on the [Releases](../../releases) page with its `Seekframe-<version>-Setup.exe`. Installed copies update
 themselves: Seekframe shows **Update to vX.Y** when a new release is out.
 
+## 3.34
+- *Save videos to* keeps only **This PC** and **Network drive (NAS)...** (plus Browse... and Check access): the cloud-app
+  buttons from 3.31 are gone. Cloud sign-in stays under *Cloud accounts*, and uploading there stays off unless you pick it.
+- The Assistant panel never makes the window wider than the screen, and closing it gives back exactly the room it took.
+- **AI connections**: an AI app that is not installed keeps its row, with **Copy install command** (the winget / npm
+  command to paste in a terminal; Seekframe installs nothing itself).
+- **How the AI signs in** now sits in *AI connections*, for the AI you chose: **Sign in with my account** (Claude
+  subscription / Gemini CLI's own sign-in) or **API key** of that company (Anthropic, or Google AI Studio for Gemini), with
+  a box for the key (stored encrypted for your Windows account; asks before paid use). The separate *AI account* section is gone.
+- **Sign in...** next to it opens the chosen AI's own sign-in (`claude auth login`, or Gemini CLI's first start) in a console
+  window; under it Seekframe shows whether that AI is signed in (Claude Pro / signed in with Google / ...; never the e-mail).
+- **The key is recognised by itself**: sk-ant- = Anthropic (kept for Claude Code), AIza = Google AI Studio (kept for Gemini CLI),
+  whichever AI is chosen; an OpenAI key or an unknown text is refused with the reason.
+- Unticking an AI app leaves no empty `mcpServers` section in its settings.
+
 ## 3.33
 - **Cloud accounts without their apps** (Settings > *Cloud accounts*): sign in to Google Drive, OneDrive, Dropbox, Box or
   pCloud in your browser (Seekframe never sees the password). Uses rclone (free, open source); *Get rclone* downloads the

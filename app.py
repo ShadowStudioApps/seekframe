@@ -569,6 +569,7 @@ class App(Root):
         self.cfg_ai = dict(cfg.get('ai') or {})
         assistant.AUTH_MODE = 'api_key' if self.cfg_ai.get('auth') == 'api_key' else 'subscription'
         ai_tasks.ENGINE = self.cfg_ai.get('engine') if self.cfg_ai.get('engine') in ai_tasks.ENGINES else 'claude'   # 3.32
+        ai_tasks.GEMINI_AUTH = 'api_key' if self.cfg_ai.get('gemini_auth') == 'api_key' else 'account'   # 3.34
         self.cloud_up = cfg.get('cloud_upload') if cfg.get('cloud_upload') in cloud.LABEL else ''   # 3.33: upload finished videos there
         self.upload_q = None   # 3.33: the cloud upload thread's queue (made on the first upload)
         self._using_prev = None   # 3.32: AI apps using Seekframe at the last check (a new one -> notification)   # 3.30 Settings > AI account   # New video (AI): style, length, voice, dir, voice_python (3.19)
@@ -807,10 +808,9 @@ class App(Root):
         ttk.Button(op, text=tr('New folder...'), command=self.add_main_folder).grid(row=1, column=3, sticky='e')
         cl = ttk.Frame(op); cl.grid(row=2, column=1, columnspan=3, sticky='w', padx=10, pady=(6, 0))
         self.cloud_btns = []   # 3.31: every place, found or not (one not found asks for its folder)
-        places = storage_places() + [('Network drive (NAS)...', 'nas')]
+        places = storage_places() + [('Network drive (NAS)...', 'nas')]   # 3.34: no cloud-app buttons (the owner uploads himself)
         for i, (label, path) in enumerate(places):
-            b = ttk.Button(cl, text=tr(label) if label in ('This PC', 'Network drive (NAS)...') else label,
-                           command=lambda l=label, p=path: self.use_storage(p, l))
+            b = ttk.Button(cl, text=tr(label), command=lambda l=label, p=path: self.use_storage(p, l))
             b.grid(row=i // 4, column=i % 4, sticky='we', padx=(0, 6), pady=(0, 6)); self.cloud_btns.append(b)
         self.storage_btn = ttk.Button(cl, text=tr('Check access'), style='Accent.TButton', command=self.check_storage)
         self.storage_btn.grid(row=len(places) // 4, column=len(places) % 4, sticky='we', padx=(0, 6), pady=(0, 6))
@@ -852,7 +852,7 @@ class App(Root):
         mrow = ttk.Frame(mc); mrow.pack(fill='x')
         ttk.Label(mrow, text=tr('Tick an AI app to let it use Seekframe (render, check, upload).'), foreground='#888').pack(side='left')
         ttk.Button(mrow, text=tr('How to connect'), command=lambda: webbrowser.open(f'https://github.com/{updater.REPO}/blob/main/docs/MCP.md')).pack(side='right')
-        ttk.Button(mrow, text=tr('Re-check'), command=self.check_mcp).pack(side='right', padx=6)
+        ttk.Button(mrow, text=tr('Re-check'), command=lambda: (self.check_mcp(), self.refresh_account())).pack(side='right', padx=6)
         self.cli_box = ttk.Frame(mc); self.cli_box.pack(fill='x', pady=(6, 0))
         self.cli_rows = {}
         for i, c in enumerate(ai_clients.CLIENTS):
@@ -860,10 +860,13 @@ class App(Root):
             dot = ttk.Label(self.cli_box, text='●', foreground='#888')
             cb = ttk.Checkbutton(self.cli_box, text=c.name, variable=var, command=lambda k=c.key: self.on_client(k))
             st = ttk.Label(self.cli_box, text='', foreground='#888')
+            ib = ttk.Button(self.cli_box, text=tr('Copy install command'), command=lambda k_=c.key: self.copy_install(k_))
             dot.grid(row=i, column=0, sticky='w'); cb.grid(row=i, column=1, sticky='w', padx=(4, 18), pady=1); st.grid(row=i, column=2, sticky='w')
-            self.cli_rows[c.key] = dict(var=var, dot=dot, cb=cb, st=st)
+            ib.grid(row=i, column=3, sticky='w', padx=(12, 0), pady=1); ib.grid_remove()
+            self.cli_rows[c.key] = dict(var=var, dot=dot, cb=cb, st=st, inst=ib)
         self.cli_missing = ttk.Label(mc, text='', foreground='#888', wraplength=round(700 * k), justify='left'); self.cli_missing.pack(anchor='w', pady=(4, 0))
-        er = ttk.Frame(mc); er.pack(fill='x', pady=(8, 0))
+        er = self.engine_row = ttk.Frame(mc); er.pack(fill='x', pady=(8, 0))
+        self.cli_missing.pack_forget()   # shown only while another app uses Seekframe
         ttk.Label(er, text=tr("AI for Seekframe's own AI buttons:")).pack(side='left')
         self.engine = tk.StringVar(value=ai_tasks.ENGINE)
         self.engine_btns = {}
@@ -871,19 +874,21 @@ class App(Root):
             b = ttk.Radiobutton(er, text=name, value=key_, variable=self.engine, command=self.on_engine); b.pack(side='left', padx=(12, 0))
             self.engine_btns[key_] = b
         self.engine_lbl = ttk.Label(mc, text='', foreground='#888', wraplength=round(700 * k), justify='left'); self.engine_lbl.pack(anchor='w', pady=(4, 0))
-        self._engine_text()
-        ac = ttk.LabelFrame(sp, text=tr('AI account'), padding=10); ac.pack(fill='x', padx=P, pady=(0, 10))
+        # 3.34 how that AI signs in: the account / subscription, or an API key of that company (stored encrypted)
+        ar = ttk.Frame(mc); ar.pack(fill='x', pady=(8, 0))
+        self.auth_title = ttk.Label(ar, text=''); self.auth_title.pack(side='left')
         self.ai_auth = tk.StringVar(value='api_key' if self.cfg_ai.get('auth') == 'api_key' else 'subscription')
-        ttk.Radiobutton(ac, text=tr('My Claude subscription through Claude Code (recommended, nothing paid per use)'), value='subscription',
-                        variable=self.ai_auth, command=self.on_ai_auth).pack(anchor='w')
-        ttk.Radiobutton(ac, text=tr('My own Anthropic API key (paid per use, billed by Anthropic)'), value='api_key',
-                        variable=self.ai_auth, command=self.on_ai_auth).pack(anchor='w', pady=(4, 0))
-        kr = ttk.Frame(ac); kr.pack(fill='x', pady=(6, 0))
+        ttk.Radiobutton(ar, text=tr('Sign in with my account'), value='subscription', variable=self.ai_auth, command=self.on_ai_auth).pack(side='left', padx=(12, 0))
+        ttk.Radiobutton(ar, text=tr('API key (paid per use)'), value='api_key', variable=self.ai_auth, command=self.on_ai_auth).pack(side='left', padx=(12, 0))
+        self.login_btn = ttk.Button(ar, text=tr('Sign in...'), command=self.ai_login); self.login_btn.pack(side='left', padx=(16, 0))
+        self.acct_state = {}   # engine -> (signed in?, text) from ai_tasks.account_status (a thread)
+        kr = ttk.Frame(mc); kr.pack(fill='x', pady=(6, 0))
         self.key_var = tk.StringVar()
         self.key_entry = ttk.Entry(kr, textvariable=self.key_var, show='•', width=46); self.key_entry.pack(side='left')
         ttk.Button(kr, text=tr('Save key'), command=self.save_key).pack(side='left', padx=(6, 0))
         ttk.Button(kr, text=tr('Remove key'), command=self.remove_key).pack(side='left', padx=(6, 0))
-        self.key_lbl = ttk.Label(ac, text='', foreground='#888', wraplength=round(700 * k), justify='left'); self.key_lbl.pack(anchor='w', pady=(6, 0))
+        self.key_lbl = ttk.Label(mc, text='', foreground='#888', wraplength=round(700 * k), justify='left'); self.key_lbl.pack(anchor='w', pady=(6, 0))
+        self._engine_text()
         lg = ttk.LabelFrame(sp, text=tr('Language'), padding=10); lg.pack(fill='x', padx=P)
         # 3.20 language: 'Auto' = Windows' language when Seekframe has it; a change asks to restart
         self.lang_names = [tr('Auto (Windows)')] + list(i18n.LANGS.values())
@@ -1096,17 +1101,18 @@ class App(Root):
             row = self.cli_rows.get(s['key'])
             if not row: continue
             using[s['key']] = s['using']
-            show = s['installed'] or s['connected']
-            for w in (row['dot'], row['cb'], row['st']):
-                if show: w.grid()
-                else: w.grid_remove()
-            if not show: missing.append(s['name']); continue
+            if not (s['installed'] or s['connected']):   # 3.34: not on this PC: a row with its install command to copy
+                row['var'].set(False); row['cb'].state(['disabled']); row['dot'].config(foreground=grey)
+                if not row.get('copied'): row['st'].config(text=tr('Not installed'), foreground=grey)
+                row['inst'].grid(); missing.append(s['name']); continue
+            row['inst'].grid_remove()
             row['var'].set(bool(s['connected'])); row['cb'].state(['!disabled'])
             row['dot'].config(foreground=green if s['connected'] else grey)
             row['st'].config(text=tr('In use now ({0})', s['using']) if s['using'] else (tr('Connected') if s['connected'] else tr('Not connected')),
                              foreground=green if s['using'] else grey)
-        self.cli_missing.config(text=(tr('Not found on this PC: {0}', ', '.join(missing)) if missing else '')
-                                + (('   ' if missing else '') + tr('Another app is using Seekframe now ({0}).', other) if other else ''))
+        self.cli_missing.config(text=tr('Another app is using Seekframe now ({0}).', other) if other else '')
+        if other: self.cli_missing.pack(anchor='w', pady=(4, 0), before=self.engine_row)
+        else: self.cli_missing.pack_forget()
         if self._using_prev is not None:   # the first check only sets the baseline (no notification at start)
             for key_, n in using.items():
                 if n and not self._using_prev.get(key_):
@@ -1126,6 +1132,14 @@ class App(Root):
         if wait: run(); return None
         threading.Thread(target=run, daemon=True).start()
 
+    def copy_install(self, key):
+        """Copy that app's install command; the owner pastes it in a terminal (Seekframe installs nothing itself)."""
+        cmd = ai_clients.INSTALL[key]
+        self.clipboard_clear(); self.clipboard_append(cmd); self.update_idletasks()
+        row = self.cli_rows[key]; row['copied'] = True
+        row['st'].config(text=tr('Copied: {0}. Paste it in a terminal, then press Re-check.', cmd), foreground='#3fb950')
+        return cmd
+
     def client_done(self, key, want, ok, msg, toast=None):
         row = self.cli_rows[key]; name = ai_clients.BY_KEY[key].name
         row['cb'].state(['!disabled'])
@@ -1143,6 +1157,10 @@ class App(Root):
     def _engine_text(self):
         name = ai_tasks.ENGINES[ai_tasks.ENGINE]
         self.engine_lbl.config(text=tr('Fix the scene, YouTube text and New video use {0}. The Assistant chat always uses Claude Code.', name), foreground='#888')
+        if hasattr(self, 'ai_auth'):   # the sign-in row shows the chosen AI's own choice
+            self.auth_title.config(text=tr('How {0} signs in:', name))
+            mode = ('api_key' if ai_tasks.GEMINI_AUTH == 'api_key' else 'subscription') if ai_tasks.ENGINE == 'gemini' else assistant.AUTH_MODE
+            self.ai_auth.set(mode); self._key_status(); self.refresh_account()
 
     def on_engine(self, ready=None, toast=None):
         """The AI for Seekframe's own AI buttons: checked first (installed + signed in), then saved, with a notification."""
@@ -1258,18 +1276,39 @@ class App(Root):
         if wait: self.upload_q.join()
 
     def _key_status(self):
+        if ai_tasks.ENGINE == 'gemini':
+            key = ai_tasks.load_gemini_key()
+            if self.ai_auth.get() == 'api_key':
+                self.key_lbl.config(text=tr('Gemini uses your Google AI Studio key {0}. Google may bill requests beyond its free tier.', assistant.key_hint(key)) if key
+                                    else tr('Paste your Google AI Studio API key (starts with AIza) and press Save key. It is stored encrypted for your Windows account only.'),
+                                    foreground='#d29922' if key else '#888')
+            else:
+                st = self.acct_state.get('gemini') if hasattr(self, 'acct_state') else None
+                self.key_lbl.config(text=(tr('Gemini CLI: {0}.', tr(st[1])) if st else tr('Gemini CLI uses its own sign-in (run gemini once in a terminal to set it up).')) +
+                                    ('  ' + tr('A saved API key {0} is kept but not used.', assistant.key_hint(key)) if key else ''),
+                                    foreground='#3fb950' if st and st[0] else ('#d29922' if st and st[0] is False else '#888'))
+            return
         key = assistant.load_api_key()
         if self.ai_auth.get() == 'api_key':
             self.key_lbl.config(text=tr('The AI features use your API key {0}. Every request is billed by Anthropic.', assistant.key_hint(key)) if key
                                 else tr('Paste your Anthropic API key (starts with sk-ant-) and press Save key. It is stored encrypted for your Windows account only.'),
                                 foreground='#d29922' if key else '#888')
         else:
-            self.key_lbl.config(text=tr('The AI features use your Claude subscription through Claude Code.') +
-                                ('  ' + tr('A saved API key {0} is kept but not used.', assistant.key_hint(key)) if key else ''), foreground='#888')
+            st = self.acct_state.get('claude') if hasattr(self, 'acct_state') else None
+            self.key_lbl.config(text=(tr('Claude Code: {0}.', tr(st[1])) if st else tr('The AI features use your Claude subscription through Claude Code.')) +
+                                ('  ' + tr('A saved API key {0} is kept but not used.', assistant.key_hint(key)) if key else ''),
+                                foreground='#3fb950' if st and st[0] else ('#d29922' if st and st[0] is False else '#888'))
 
     def on_ai_auth(self, ask=None):
-        """Switching to the API key asks once (it costs money per request); the choice is saved in settings 'ai'."""
+        """Switching to the API key asks once (it costs money per request); the choice is saved in settings 'ai'.
+        3.34: for the AI chosen above (Claude Code: 'auth', Gemini CLI: 'gemini_auth')."""
         mode = self.ai_auth.get()
+        if ai_tasks.ENGINE == 'gemini':
+            if mode == 'api_key' and self.cfg_ai.get('gemini_auth') != 'api_key':
+                if not (ask or messagebox.askyesno)(tr('AI connections'), tr('With an API key, Google may bill Gemini requests beyond its free tier. Use your API key?')):
+                    self.ai_auth.set('subscription'); mode = 'subscription'
+            self.cfg_ai['gemini_auth'] = 'api_key' if mode == 'api_key' else 'account'; ai_tasks.GEMINI_AUTH = self.cfg_ai['gemini_auth']
+            self._key_status(); self.save(); return
         if mode == 'api_key' and self.cfg_ai.get('auth') != 'api_key':
             if not (ask or messagebox.askyesno)(tr('AI account'), tr('With an API key every AI request is billed to your Anthropic account. Use your API key?')):
                 self.ai_auth.set('subscription'); mode = 'subscription'
@@ -1277,14 +1316,77 @@ class App(Root):
         if self.ai: self.ai.new_chat()   # the next chat starts with the new sign-in
         self._key_status(); self.save()
 
-    def save_key(self):
+    def save_key(self, ask=None):
+        """3.34: the company is read from the key itself (sk-ant- = Anthropic for Claude Code, AIza = Google AI Studio for
+        Gemini CLI) and the key is stored for that AI, whichever AI is chosen above. For the chosen one it offers to switch
+        to API-key mode (asks about the cost first)."""
+        prov = ai_tasks.key_provider(self.key_var.get())
+        if prov == 'openai':
+            self.key_lbl.config(text=tr('That is an OpenAI key. Seekframe\'s AI buttons use Claude Code or Gemini CLI, so it is not used.'), foreground='#f85149'); return False
+        if prov is None:
+            self.key_lbl.config(text=tr('Seekframe does not know this key. Anthropic keys start with sk-ant-, Google AI Studio keys with AIza.'), foreground='#f85149'); return False
+        target = 'gemini' if prov == 'google' else 'claude'
+        if target != ai_tasks.ENGINE:
+            cur = ai_tasks.ENGINE
+            try:
+                ai_tasks.ENGINE = target; ok = self._save_key_for_engine()
+            finally:
+                ai_tasks.ENGINE = cur
+            if ok:
+                self._key_status()
+                self.key_lbl.config(text=tr('Saved as your {0} key for {1}. Choose {1} above to use it.', 'Google AI Studio' if prov == 'google' else 'Anthropic',
+                                            ai_tasks.ENGINES[target]), foreground='#3fb950')
+            return ok
+        ok = self._save_key_for_engine()
+        if ok and self.ai_auth.get() != 'api_key':
+            self.ai_auth.set('api_key'); self.on_ai_auth(ask=ask)
+        return ok
+
+    def _save_key_for_engine(self):
+        if ai_tasks.ENGINE == 'gemini':
+            try: ai_tasks.save_gemini_key(self.key_var.get())
+            except ValueError: self.key_lbl.config(text=tr('That does not look like a Google AI Studio API key (it starts with AIza).'), foreground='#f85149'); return False
+            except OSError as e: self.key_lbl.config(text=str(e), foreground='#f85149'); return False
+            self.key_var.set(''); self._key_status(); return True
         try: assistant.save_api_key(self.key_var.get())
         except ValueError as e: self.key_lbl.config(text=tr('That does not look like an Anthropic API key (it starts with sk-ant-).'), foreground='#f85149'); return False
         except OSError as e: self.key_lbl.config(text=str(e), foreground='#f85149'); return False
         self.key_var.set('')   # never kept on screen
         self._key_status(); return True
 
+    def refresh_account(self, wait=False, status=None):
+        """The chosen AI's own sign-in state (thread), shown under the sign-in row."""
+        eng = ai_tasks.ENGINE
+        def run():
+            try: st = (status or ai_tasks.account_status)(eng)
+            except Exception: st = (None, 'could not check')
+            self.q.put(('acct', eng, st))
+        if wait: run(); return None
+        threading.Thread(target=run, daemon=True).start()
+
+    def show_account(self, eng, st):
+        self.acct_state[eng] = st
+        if eng == ai_tasks.ENGINE: self._key_status()
+
+    def ai_login(self, popen=None):
+        """Sign the chosen AI in, in its own console window (claude auth login / Gemini CLI's first-start sign-in). The token
+        stays with that program; Seekframe only checks afterwards whether it is signed in."""
+        cmd = ai_tasks.login_command(ai_tasks.ENGINE)
+        name = ai_tasks.ENGINES[ai_tasks.ENGINE]
+        if not cmd:
+            self.key_lbl.config(text=tr('{0} is not installed. Use Copy install command above, then press Re-check.', name), foreground='#f85149'); return False
+        try:
+            (popen or subprocess.Popen)(cmd, creationflags=getattr(subprocess, 'CREATE_NEW_CONSOLE', 0), cwd=os.path.expanduser('~'), env=assistant.clean_env())
+        except Exception as e:
+            self.key_lbl.config(text=str(e), foreground='#f85149'); return False
+        self.key_lbl.config(text=tr('Finish the sign-in in the window that opened, then press Re-check.'), foreground='#d29922')
+        return True
+
     def remove_key(self):
+        if ai_tasks.ENGINE == 'gemini':
+            ai_tasks.delete_gemini_key()
+            if self.ai_auth.get() == 'api_key': self.ai_auth.set('subscription'); self.on_ai_auth()
+            self._key_status(); return
         assistant.delete_api_key()
         if self.ai_auth.get() == 'api_key': self.ai_auth.set('subscription'); self.on_ai_auth()
         self._key_status()
@@ -1853,6 +1955,8 @@ class App(Root):
                     self.show_mcp(m[1])
                 elif m[0] == 'client_done':
                     self.client_done(*m[1:])
+                elif m[0] == 'acct':
+                    self.show_account(m[1], m[2])
                 elif m[0] == 'cloud':
                     self.show_cloud(*m[1:])
                 elif m[0] == 'cloud_msg':
@@ -1957,8 +2061,12 @@ class App(Root):
             self.update_idletasks()
             need = max(self.winfo_reqwidth(), self.body.winfo_reqwidth() + (self.side.winfo_reqwidth() if self.side.winfo_manager() else 0)) \
                 + self.ai_frame.winfo_reqwidth() + 14
-            self._ai_grew = max(0, need - w0) if self.wm_state() != 'zoomed' else 0
-            if self._ai_grew: self.geometry(f'{w0 + self._ai_grew}x{self.winfo_height()}'); self.update_idletasks()
+            # 3.34: never wider than the screen; remember how much it really grew, so closing gives back exactly that
+            want = min(need, self.winfo_screenwidth() - self.winfo_rootx() - 8) if self.wm_state() != 'zoomed' else w0
+            self._ai_grew = 0
+            if want > w0:
+                self.geometry(f'{want}x{self.winfo_height()}'); self.update_idletasks()
+                self._ai_grew = max(0, self.winfo_width() - w0)
             self.ai_frame.pack(side='right', fill='both', padx=(0, 14), pady=14, before=self.body)
             self.ai_in.focus_set()
         else:
@@ -2201,13 +2309,11 @@ def cloud_folders(env=None):
 CLOUD_APPS = ('OneDrive', 'Google Drive', 'Dropbox', 'iCloud Drive', 'Box')
 
 def storage_places(env=None):
-    """The Settings place buttons (3.31): This PC (Videos), every cloud folder found, then the usual cloud apps that
-    were not found with path None (the button asks for the folder). [(label, path or None)]"""
+    """The Settings place buttons: This PC (the Videos folder). 3.34: the cloud-app buttons (3.31) are gone, the owner
+    uploads to the cloud himself; a synced cloud folder can still be typed or picked with Browse... [(label, path)]"""
     env = os.environ if env is None else env
     home = env.get('USERPROFILE') or os.path.expanduser('~')
-    found = cloud_folders(env)
-    return ([('This PC', os.path.join(home, 'Videos'))] + found
-            + [(a, None) for a in CLOUD_APPS if not any(l.startswith(a) for l, _ in found)])
+    return [('This PC', os.path.join(home, 'Videos'))]
 
 def storage_kind(path):
     """'network' for \\\\server\\share or a mapped network drive, 'cloud' inside a synced cloud folder, else 'local'."""

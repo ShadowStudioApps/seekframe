@@ -58,8 +58,7 @@ sidebar (Seekframe remembers it).
 - **Queue**: your scenes, the render options (Quality, Format, Sound, Capture, Blender), the Render buttons and the progress.
 - **New video**, **AI tools**, **YouTube...**, **Project** and **Assistant** open those windows or menus.
 - **Settings** (bottom):
-  - *Save videos to*: the folder (buttons for This PC, OneDrive, Google Drive, Dropbox, iCloud Drive, Box and
-    *Network drive (NAS)...*; one that is not found asks for its folder), the Folder rule, and **Check access** (can Seekframe write there, how much space is free).
+  - *Save videos to*: the folder (buttons for This PC and *Network drive (NAS)...*; any other folder with Browse...), the Folder rule, and **Check access** (can Seekframe write there, how much space is free).
   - *Setup*: Chrome, ffmpeg, Playwright, Blender, with *Install missing* and *Self-test*.
   - *Cloud accounts*: sign in to Google Drive, OneDrive, Dropbox, Box or pCloud in your browser (no cloud app needed;
     it uses rclone, which *Get rclone* downloads for you). Then **Cloud...** in the Queue adds files from there (a scene
@@ -68,7 +67,9 @@ sidebar (Seekframe remembers it).
     Windsurf / Devin, Gemini CLI, Codex). Tick one and Seekframe sets itself up in that app (restart the app if it is
     open); green = connected, *In use now* = it is running Seekframe. Windows shows a notification when one connects.
     Below: which AI does Seekframe's own AI buttons (Claude Code or Gemini CLI); the Assistant chat always uses Claude Code.
-  - *AI account*: your Claude subscription (default), or your own Anthropic API key (paid per use; stored encrypted).
+    An app that is not installed shows **Copy install command** (paste it in a terminal, then Re-check).
+    *How ... signs in* (for the AI chosen there): your account / subscription (default), or that company's API key
+    (Anthropic for Claude Code, Google AI Studio for Gemini; paid per use; stored encrypted).
   - *Language*.
 - **About** (bottom, picture below): the version, Shadow Studio, and links to the GitHub page, this guide, what's new, the privacy
   policy and *Report a problem*.

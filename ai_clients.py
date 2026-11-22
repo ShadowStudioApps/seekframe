@@ -27,6 +27,12 @@ CLIENTS = [Client('claude_code', 'Claude Code', kind='claude_cli', exe_names=('c
            Client('gemini', 'Gemini CLI'),
            Client('codex', 'Codex', kind='toml', exe_names=('codex.exe',))]
 BY_KEY = {c.key: c for c in CLIENTS}
+# 3.34: what to paste in a terminal to install a missing app (winget IDs checked with `winget show --exact`, 2026-11-22;
+# Gemini CLI is not in winget: npm, which needs Node.js)
+INSTALL = {'claude_code': 'winget install -e --id Anthropic.ClaudeCode', 'claude_desktop': 'winget install -e --id Anthropic.Claude',
+           'cursor': 'winget install -e --id Anysphere.Cursor', 'vscode': 'winget install -e --id Microsoft.VisualStudioCode',
+           'windsurf': 'winget install -e --id Codeium.Windsurf', 'gemini': 'npm install -g @google/gemini-cli',
+           'codex': 'winget install -e --id OpenAI.Codex'}
 
 
 def _dirs(env=None, home=None):
@@ -197,6 +203,7 @@ def disconnect(key, env=None, home=None, run=subprocess.run, claude=None):
         d = _read_json(path)
         if SERVER not in (d.get('mcpServers') or {}): return True, 'ok'
         _backup(path); del d['mcpServers'][SERVER]
+        if not d['mcpServers']: del d['mcpServers']   # 3.34: leave no empty section behind
         with open(path, 'w', encoding='utf-8') as f: json.dump(d, f, indent=2, ensure_ascii=False); f.write('\n')
         return True, 'ok'
     except Exception as e:
