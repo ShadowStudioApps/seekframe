@@ -3,6 +3,16 @@
 Every release is on the [Releases](../../releases) page with its `Seekframe-<version>-Setup.exe`. Installed copies update
 themselves: Seekframe shows **Update to vX.Y** when a new release is out.
 
+## 3.37
+- Seekframe's own AI buttons (New video, Fix the scene, YouTube text) can now use **ChatGPT** (Codex, on your ChatGPT
+  sign-in) and **Grok** (Grok Build, on your Grok sign-in) as well as Claude Code and Gemini CLI. The AI is chosen **in
+  those windows**, which show only the AIs you are signed in to; the choice moved out of Settings.
+  ChatGPT never touches a file itself: Seekframe gives it the files and writes back only the one file the job may change.
+  Grok may change only that file (an edit of anything else is refused).
+- While an AI job runs, the window shows a moving bar and how long it has been working.
+- AI connections finds Grok Build right after `winget install` (in winget's own folder), even when Seekframe was
+  already open and still has the old PATH.
+
 ## 3.35
 - Every box you can type in now looks like one: a clear border that turns blue while the cursor is in it, its own field
   colour, and a grey hint while it is empty ("Type or paste your idea here...", the Assistant's message box, the AI note).

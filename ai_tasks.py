@@ -42,13 +42,20 @@ CONTRACT = """The Seekframe scene contract (what every scene must do):
 
 
 # ---------------------------------------------------------------- which AI does the jobs (3.32: Settings > AI connections)
-ENGINE = 'claude'   # 'claude' (Claude Code, the default) or 'gemini' (Gemini CLI); the Assistant chat is always Claude Code
-ENGINES = {'claude': 'Claude Code', 'gemini': 'Gemini CLI'}
+ENGINE = 'claude'   # the AI of Seekframe's own AI buttons; the Assistant chat is always Claude Code
+# 3.37: + ChatGPT (Codex CLI on the ChatGPT sign-in) and Grok (xAI's Grok Build); chosen in the New video / AI windows
+ENGINES = {'claude': 'Claude Code', 'gemini': 'Gemini CLI', 'codex': 'ChatGPT (Codex)', 'grok': 'Grok'}
+SHORT = {'claude': 'Claude', 'gemini': 'Gemini', 'codex': 'ChatGPT', 'grok': 'Grok'}
+
+
+def ai_name(engine=None):
+    """The short name in progress messages ('Claude is writing the narration...')."""
+    return SHORT.get(engine or ENGINE, 'The AI')
 
 
 def Task(cwd, edit_files=(), **kw):
-    """One AI job with the engine chosen in Settings (ClaudeTask or GeminiTask; both: ask(), stop(), session_id)."""
-    return (GeminiTask if ENGINE == 'gemini' else ClaudeTask)(cwd, edit_files, **kw)
+    """One AI job with the chosen engine (ClaudeTask / GeminiTask / CodexTask / GrokTask: ask(), stop(), session_id)."""
+    return {'gemini': GeminiTask, 'codex': CodexTask, 'grok': GrokTask}.get(ENGINE, ClaudeTask)(cwd, edit_files, **kw)
 
 
 # ---------------------------------------------------------------- one Claude job
@@ -178,6 +185,12 @@ def account_status(engine, run=subprocess.run, home=None):
             if not d.get('loggedIn'): return False, 'not signed in'
             plan = d.get('subscriptionType') or d.get('planTier') or ''
             return True, 'signed in' + (f' (Claude {plan.capitalize()})' if plan else '') if d.get('authMethod') == 'claude.ai' else 'signed in (' + str(d.get('authMethod')) + ')'
+        if engine == 'codex':
+            if not find_codex(): return False, 'not installed'
+            return (True, 'signed in') if os.path.isfile(os.path.join(home, '.codex', 'auth.json')) else (False, 'not signed in')
+        if engine == 'grok':
+            if not find_grok(): return False, 'not installed'
+            return (True, 'signed in') if os.path.isfile(os.path.join(home, '.grok', 'auth.json')) else (False, 'not signed in')
         g = os.path.join(home, '.gemini')
         try:
             with open(os.path.join(g, 'settings.json'), encoding='utf-8') as f: sel = ((json.load(f).get('security') or {}).get('auth') or {}).get('selectedType')
@@ -191,12 +204,70 @@ def account_status(engine, run=subprocess.run, home=None):
         return None, f'could not check ({type(e).__name__})'
 
 
+def find_codex(which=shutil.which):
+    """[node.exe, codex.js] of the npm Codex CLI (keeps the prompt away from cmd.exe), else [codex], else None."""
+    c = which('codex')
+    if not c: return None
+    d = os.path.dirname(c)
+    js = os.path.join(d, 'node_modules', '@openai', 'codex', 'bin', 'codex.js')
+    node = os.path.join(d, 'node.exe') if os.path.isfile(os.path.join(d, 'node.exe')) else which('node')
+    if os.path.isfile(js) and node: return [node, js]
+    return [c]
+
+
+def find_grok(which=shutil.which, local=None):
+    """grok.exe (Grok Build): on PATH, else in winget's package folder (an app opened before the install has the old PATH)."""
+    g = which('grok')
+    if g: return [g]
+    local = local or os.environ.get('LOCALAPPDATA') or os.path.join(os.path.expanduser('~'), 'AppData', 'Local')
+    hits = sorted(glob.glob(os.path.join(local, 'Microsoft', 'WinGet', 'Packages', 'xAI.GrokBuild_*', 'grok.exe')))
+    return [hits[-1]] if hits else None
+
+
+def codex_ready(cmd, home=None):
+    if not cmd: return False, 'ChatGPT (Codex CLI) was not found. Install it (npm install -g @openai/codex) and sign in once with codex login.'
+    home = home or os.path.expanduser('~')
+    if not (os.path.isfile(os.path.join(home, '.codex', 'auth.json')) or os.environ.get('OPENAI_API_KEY')):
+        return False, 'Codex is not signed in yet: run codex login once and sign in with ChatGPT.'
+    return True, 'ChatGPT (Codex)'
+
+
+def grok_ready(cmd, home=None):
+    if not cmd: return False, 'Grok Build was not found. Install it (winget install -e --id xAI.GrokBuild) and sign in once by running grok.'
+    home = home or os.path.expanduser('~')
+    if not (os.path.isfile(os.path.join(home, '.grok', 'auth.json')) or os.environ.get('XAI_API_KEY')):
+        return False, 'Grok is not signed in yet: run grok once in a terminal and sign in.'
+    return True, 'Grok'
+
+
+def engine_ready(engine):
+    """(ok, message): that AI is installed and signed in (file checks; Claude Code: assistant.check_ready)."""
+    if engine == 'gemini': return gemini_ready(find_gemini())
+    if engine == 'codex': return codex_ready(find_codex())
+    if engine == 'grok': return grok_ready(find_grok())
+    return asst.check_ready(asst.find_claude())
+
+
+def available_engines(ready=None):
+    """[(key, name)] of the AIs installed and signed in on this PC: the choice shown in the New video / AI windows."""
+    out = []
+    for k, n in ENGINES.items():
+        try: ok = (ready or engine_ready)(k)[0]
+        except Exception: ok = False
+        if ok: out.append((k, n))
+    return out
+
+
 def login_command(engine):
     """The command that signs the chosen AI in, run in its own console window: `claude auth login`, or Gemini CLI itself
     (it asks how to sign in on its first start; /auth changes it later)."""
     if engine == 'claude':
         exe = asst.find_claude()
         return asst.cmd(exe) + ['auth', 'login'] if exe else None
+    if engine == 'codex':
+        c = find_codex(); return c + ['login'] if c else None
+    if engine == 'grok':
+        g = find_grok(); return g + ['login'] if g else None
     return find_gemini()
 
 
@@ -342,6 +413,220 @@ class GeminiTask:
         self.stopped = True; asst.kill_tree(self.proc)
 
 
+# ---------------------------------------------------------------- one ChatGPT (Codex CLI) job (3.37)
+TEXT_EXT = ('.html', '.htm', '.txt', '.json', '.md', '.js', '.mjs', '.css', '.srt', '.toml', '.csv')
+IMAGE_EXT = ('.jpg', '.jpeg', '.png', '.webp')
+INLINE_MAX = 400_000
+CODEX_RULES = """HOW THIS JOB WORKS: you cannot run commands, read files or edit files yourself here. Everything you need is in this
+message (the files are pasted below). Seekframe writes the files for you: end your answer with, for EACH file you
+change or create, one line
+=== FILE: <file name> ===
+followed by the file's COMPLETE new content in ONE fenced code block (```), with nothing left out or shortened.
+Only these files may be written: {files}. Anything for another file is ignored. Above those blocks give the short summary."""
+
+
+def _mentioned_files(prompt, cwd, edit_files):
+    """Files a job prompt points at: names in its folder, absolute paths on their own, and the files it may change."""
+    found = {}
+    try: names = os.listdir(cwd)
+    except OSError: names = []
+    for n in names:
+        p = os.path.join(cwd, n)
+        if os.path.isfile(p) and (n in edit_files or (len(n) > 4 and n in prompt)): found[os.path.normcase(p)] = p
+    for m in re.finditer(r'[A-Za-z]:[\\/][^\n"<>|*?]+', prompt):
+        p = m.group(0).rstrip('.,;:)]\' ')
+        if os.path.isfile(p): found[os.path.normcase(p)] = p
+    return list(found.values())
+
+
+def inline_files(prompt, cwd, edit_files):
+    """(the files pasted in as text, [image paths]) for an AI that cannot read files itself."""
+    parts, imgs = [], []
+    for p in _mentioned_files(prompt, cwd, edit_files):
+        ext = os.path.splitext(p)[1].lower()
+        if ext in IMAGE_EXT: imgs.append(p); continue
+        if ext not in TEXT_EXT: continue
+        try:
+            with open(p, encoding='utf-8', errors='replace') as f: txt = f.read(INLINE_MAX + 1)
+        except OSError: continue
+        if len(txt) > INLINE_MAX: txt = txt[:INLINE_MAX] + '\n[... cut: the file is longer]'
+        parts.append(f'=== {os.path.basename(p)} ({p}) ===\n```\n{txt}\n```')
+    for n in edit_files:
+        if not os.path.isfile(os.path.join(cwd, n)): parts.append(f'=== {n} === (a new file: it does not exist yet)')
+    return ('\n\nTHE FILES:\n' + '\n\n'.join(parts)) if parts else '', imgs
+
+
+def take_files(text, cwd, edit_files):
+    """Write the '=== FILE: name ===' + code block answers into cwd (only edit_files). -> (summary text, [written names])."""
+    chunks = re.split(r'^=== FILE: *(.+?) *===[ \t]*$', text, flags=re.M)
+    summary, written = chunks[0].strip(), []
+    for i in range(1, len(chunks) - 1, 2):
+        name, body = os.path.basename(chunks[i].strip().strip('`"\'')), chunks[i + 1]
+        if name not in edit_files: continue
+        a = body.find('```')
+        if a < 0: continue
+        start = body.find('\n', a) + 1; end = body.rfind('```')
+        if end <= start: continue
+        content = body[start:end]
+        if content.endswith('\n'): content = content[:-1]
+        with open(os.path.join(cwd, name), 'w', encoding='utf-8', newline='') as f: f.write(content + '\n')
+        written.append(name)
+    return summary, written
+
+
+class CodexTask:
+    """The same job done by ChatGPT through the Codex CLI on the owner's ChatGPT sign-in (`codex exec --json`). Codex runs
+    with its shell turned off and a read-only sandbox (measured with Codex CLI 0.171 on Windows: its workspace-write
+    sandbox did NOT stop a write outside the folder; read-only + no shell refused every write), so it cannot touch any
+    file: Seekframe pastes the files in and writes back only `edit_files` from its answer (take_files).
+    --ignore-user-config: no MCP servers, no plugins."""
+
+    def __init__(self, cwd, edit_files=(), on_event=lambda *a: None, lang='English', exe=None, popen=subprocess.Popen,
+                 ready=None, model=None, add_dirs=(), find=None, **_ignored):
+        self.cwd = cwd; self.edit_files = [os.path.basename(f) for f in edit_files]; self.on_event = on_event
+        self.lang = lang; self.exe = exe; self.popen = popen; self.ready = ready or codex_ready; self.model = model
+        self.add_dirs = list(add_dirs); self.session_id = None; self.proc = None; self.stopped = False; self.ready_ok = False
+        self.find = find or find_codex
+
+    def args(self, images=()):
+        cmd = list(self.exe if isinstance(self.exe, (list, tuple)) else [self.exe])
+        a = cmd + ['exec'] + (['resume', self.session_id] if self.session_id else [])
+        a += [f'--image={i}' for i in images]
+        a += ['--json', '--skip-git-repo-check', '--ignore-user-config', '--disable', 'shell_tool', '-c', 'sandbox_mode="read-only"']
+        if not self.session_id: a += ['-s', 'read-only', '-C', self.cwd]
+        if self.model: a += ['-m', self.model]
+        return a + ['-']
+
+    def ask(self, prompt):
+        if self.stopped: return dict(ok=False, text='', error='stopped', session_id=self.session_id, denials=[])
+        if not self.ready_ok:
+            self.exe = self.exe or self.find()
+            ok, msg = self.ready(self.exe)
+            if not ok: return dict(ok=False, text='', error=msg, session_id=None, denials=[])
+            self.ready_ok = True
+        files, imgs = inline_files(prompt, self.cwd, self.edit_files)
+        full = (SYSTEM.format(lang=self.lang) + '\n\n' + prompt + '\n\n' +
+                CODEX_RULES.format(files=', '.join(self.edit_files) or '(none: answer in text only)') + files)
+        self.on_event('status', 'Starting ChatGPT...')
+        try:
+            p = self.proc = self.popen(self.args(imgs), cwd=self.cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE, creationflags=NOWIN)
+        except Exception as e:
+            return dict(ok=False, text='', error=f'could not start Codex: {e}', session_id=None, denials=[])
+        err = []
+        threading.Thread(target=lambda: [err.append(l.decode('utf-8', 'replace').rstrip()) for l in iter(p.stderr.readline, b'')], daemon=True).start()
+        try: p.stdin.write(full.encode('utf-8')); p.stdin.close()
+        except Exception: pass
+        self.on_event('status', 'ChatGPT is working...')
+        msgs, fail = [], None
+        for raw in iter(p.stdout.readline, b''):
+            try: d = json.loads(raw.decode('utf-8', 'replace'))
+            except ValueError: continue
+            t = d.get('type'); it = d.get('item') or {}
+            if t == 'thread.started' and d.get('thread_id'): self.session_id = d['thread_id']
+            elif t == 'item.completed' and it.get('type') == 'agent_message' and it.get('text'):
+                msgs.append(it['text']); self.on_event('text', it['text'].split('\n=== FILE:')[0][:2000] + '\n')
+            elif t in ('error', 'turn.failed'):
+                fail = str((d.get('error') or {}).get('message') or d.get('message') or 'Codex error')[:300]
+                self.on_event('status', fail)
+        code = p.wait(); self.proc = None
+        text = '\n'.join(msgs)
+        if self.stopped: return dict(ok=False, text=text, error='stopped', session_id=self.session_id, denials=[])
+        if fail or code != 0:
+            tail = [l for l in err if 'ERROR' in l][-2:] or err[-2:]
+            why = fail or f'Codex stopped (exit {code})' + (': ' + ' / '.join(tail) if tail else '')
+            return dict(ok=False, text=text, error=why, session_id=self.session_id, denials=[])
+        summary, written = take_files(text, self.cwd, self.edit_files)
+        for n in written: self.on_event('tool', f'Seekframe wrote {n}')
+        return dict(ok=True, text=summary or text, error=None, session_id=self.session_id, denials=[])
+
+    def stop(self):
+        self.stopped = True; asst.kill_tree(self.proc)
+
+
+# ---------------------------------------------------------------- one Grok (Grok Build) job (3.37)
+GROK_READ = ['read_file', 'list_dir', 'grep']
+GROK_EDIT = 'search_replace'   # Grok Build 1.0.92: its file-writing tool (an empty old_string creates a new file)
+
+
+class GrokTask:
+    """The same job done by Grok (`grok --prompt-file`, headless, --output-format streaming-json) on the owner's Grok
+    sign-in. --tools = read tools + search_replace, --permission-mode dontAsk, --allow search_replace(<file>) only for
+    edit_files (measured with Grok Build 1.0.92: an edit of another file was refused); MCP tools (use_tool) denied."""
+
+    def __init__(self, cwd, edit_files=(), on_event=lambda *a: None, lang='English', exe=None, popen=subprocess.Popen,
+                 ready=None, model=None, add_dirs=(), find=None, **_ignored):
+        self.cwd = cwd; self.edit_files = [os.path.basename(f) for f in edit_files]; self.on_event = on_event
+        self.lang = lang; self.exe = exe; self.popen = popen; self.ready = ready or grok_ready; self.model = model
+        self.add_dirs = list(add_dirs); self.session_id = None; self.proc = None; self.stopped = False; self.ready_ok = False
+        self.find = find or find_grok; self.prompt_file = None
+
+    def args(self):
+        cmd = list(self.exe if isinstance(self.exe, (list, tuple)) else [self.exe])
+        a = cmd + ['--prompt-file', self.prompt_file, '--output-format', 'streaming-json', '--permission-mode', 'dontAsk',
+                   '--tools', ','.join(GROK_READ + ([GROK_EDIT] if self.edit_files else [])),
+                   '--deny', 'use_tool', '--deny', 'search_tool', '--no-memory', '--no-subagents', '--disable-web-search',
+                   '--rules', SYSTEM.format(lang=self.lang), '--cwd', self.cwd]
+        for f in self.edit_files: a += ['--allow', f'{GROK_EDIT}({f})']
+        for d in self.add_dirs:
+            if d and os.path.isdir(d): a += ['--add-dir', d]
+        if self.model: a += ['-m', self.model]
+        if self.session_id: a += ['-r', self.session_id]
+        return a
+
+    def ask(self, prompt):
+        if self.stopped: return dict(ok=False, text='', error='stopped', session_id=self.session_id, denials=[])
+        if not self.ready_ok:
+            self.exe = self.exe or self.find()
+            ok, msg = self.ready(self.exe)
+            if not ok: return dict(ok=False, text='', error=msg, session_id=None, denials=[])
+            self.ready_ok = True
+        import tempfile
+        fd, self.prompt_file = tempfile.mkstemp(prefix='shadow_grok_', suffix='.txt')
+        with os.fdopen(fd, 'w', encoding='utf-8') as f: f.write(prompt)
+        self.on_event('status', 'Starting Grok...')
+        try:
+            p = self.proc = self.popen(self.args(), cwd=self.cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE, creationflags=NOWIN)
+        except Exception as e:
+            return dict(ok=False, text='', error=f'could not start Grok: {e}', session_id=None, denials=[])
+        err = []
+        threading.Thread(target=lambda: [err.append(l.decode('utf-8', 'replace').rstrip()) for l in iter(p.stderr.readline, b'')], daemon=True).start()
+        self.on_event('status', 'Grok is working...')
+        text, denials, names, end = [], [], {}, None
+        for raw in iter(p.stdout.readline, b''):
+            try: d = json.loads(raw.decode('utf-8', 'replace'))
+            except ValueError: continue
+            t = d.get('type')
+            if t == 'text' and d.get('data'): text.append(d['data']); self.on_event('text', d['data'])
+            elif t == 'tool_call':
+                ri = d.get('rawInput') or {}
+                what = ri.get('file_path') or ri.get('target_file') or ri.get('target_directory') or ri.get('pattern') or ''
+                s = f"{d.get('toolName')}: {os.path.basename(str(what))}".rstrip(': ')
+                names[d.get('toolCallId')] = s; self.on_event('tool', s); self.on_event('status', f'Grok: {d.get("toolName")}')
+            elif t == 'tool_call_update' and d.get('status') == 'failed':
+                why = json.dumps(d.get('content') or '')
+                if 'cancel' in why or 'permission' in why or 'denied' in why:
+                    denials.append(names.get(d.get('toolCallId'), '?')); self.on_event('denied', denials[-1])
+            elif t == 'end':
+                end = d
+                if d.get('sessionId'): self.session_id = d['sessionId']
+            elif t == 'error':
+                self.on_event('status', str(d.get('message') or d.get('data') or 'Grok error')[:200])
+        code = p.wait(); self.proc = None
+        try: os.remove(self.prompt_file)
+        except OSError: pass
+        if self.stopped: return dict(ok=False, text=''.join(text), error='stopped', session_id=self.session_id, denials=denials)
+        if code != 0 or end is None:
+            msgs = [l for l in err if l.strip()]
+            return dict(ok=False, text=''.join(text), error=f'Grok stopped (exit {code})' + (': ' + ' / '.join(msgs[-3:]) if msgs else ''),
+                        session_id=self.session_id, denials=denials)
+        return dict(ok=True, text=''.join(text), error=None, session_id=self.session_id, denials=denials)
+
+    def stop(self):
+        self.stopped = True; asst.kill_tree(self.proc)
+
+
 # ---------------------------------------------------------------- Fix with AI
 def clean_stale_fixes(folder, now=None):
     """Remove .shadow_fix_* copies (and their check sheets) older than FIX_STALE_S in folder (a crash left them)."""
@@ -386,7 +671,7 @@ def fix_scene(scene, problems, task=None, check=None, rounds=3, notes=(), progre
     prompt = fix_prompt(scene, work, problems, notes); out = dict(ok=False, work=work, rounds=0, summary='', problems=list(problems), sheet=None, error=None)
     before = open(work, 'rb').read()
     for r in range(1, max(1, rounds) + 1):
-        progress(f'Round {r}: Claude is fixing the scene...')
+        progress(f'Round {r}: {ai_name()} is fixing the scene...')
         res = task.ask(prompt); out['rounds'] = r
         if not res['ok']: out['error'] = res['error']; out['summary'] = res['text']; break
         out['summary'] = res['text']
@@ -396,7 +681,7 @@ def fix_scene(scene, problems, task=None, check=None, rounds=3, notes=(), progre
         out['problems'] = left; out['sheet'] = chk and chk.get('sheet')
         if not left:
             out['ok'] = open(work, 'rb').read() != before or not problems
-            if not out['ok']: out['error'] = 'Claude did not change the scene'
+            if not out['ok']: out['error'] = f'{ai_name()} did not change the scene'
             break
         prompt = ('Seekframe checked your fixed copy again. Still wrong:\n' + '\n'.join(f'- {x}' for x in left) +
                   f'\nFix these in "{os.path.basename(work)}" too, then give the short summary again.')
@@ -496,14 +781,14 @@ def write_metadata(mp4, scene=None, channel='', notes='', replace=False, task=No
               + (f'The scene it was rendered from: {scene}\n' + scene_text(scene) + '\n' if scene else '')
               + f'\nWrite the file "{os.path.basename(path)}" in this folder with the Write tool.\n{META_FORMAT}\n'
               'Write the TITLE / DESCRIPTION / TAGS in the language the video itself uses. Then give a one-line summary.')
-    progress('Claude is watching the video and writing the text...')
+    progress(f'{ai_name()} is watching the video and writing the text...')
     try: res = task.ask(prompt)
     finally:
         if sheet:
             try: os.remove(sheet)
             except OSError: pass
     if not res['ok']: return dict(ok=False, path=None, text='', summary=res['text'], error=res['error'])
-    if not os.path.isfile(path): return dict(ok=False, path=None, text='', summary=res['text'], error='Claude did not write the file')
+    if not os.path.isfile(path): return dict(ok=False, path=None, text='', summary=res['text'], error=f'{ai_name()} did not write the file')
     text = open(path, encoding='utf-8', errors='replace').read()
     try: m = youtube.parse_metadata(text)
     except Exception as e: m = None; err = f'the file does not parse: {e}'
@@ -606,7 +891,7 @@ def check_loop(task, path, prompt, check, rounds, progress, what='scene'):
     problems, sheet, error)."""
     out = dict(ok=False, rounds=0, summary='', problems=[], sheet=None, error=None)
     for r in range(1, max(1, rounds) + 1):
-        progress(f'Round {r}: Claude is working on the {what}...')
+        progress(f'Round {r}: {ai_name()} is working on the {what}...')
         res = task.ask(prompt); out['rounds'] = r; out['summary'] = res['text']
         if not res['ok']: out['error'] = res['error']; break
         if task.stopped: out['error'] = 'stopped'; break
@@ -636,14 +921,14 @@ def new_video(idea, root, style='Free (describe it in the idea)', seconds=60, vo
         script = os.path.join(folder, name + '.script.txt'); out['script'] = script
         task.cwd, task.edit_files = folder, [os.path.basename(script)]
         n = int(seconds * WORDS_PER_S)
-        progress('Claude is writing the narration...')
+        progress(f'{ai_name()} is writing the narration...')
         res = task.ask(f'Job 1 of 2: write the NARRATION for a {seconds}-second video.\nIdea: {idea}\nStyle: {style} - {look}\n'
                        + (f'This channel\'s own guide (read it): {sk}\n' if sk else '') +
                        f'Write "{os.path.basename(script)}" in this folder: about {n} words of spoken English (the voice is English '
                        'even if the idea is in another language), plain sentences, no headings, no stage directions, no emojis, numbers '
                        'written as words. A strong first sentence (a question or surprise), one clear idea per sentence, a short ending.')
         if not res['ok'] or task.stopped or not os.path.isfile(script):
-            out.update(error=res.get('error') or ('stopped' if task.stopped else 'Claude did not write the narration'), summary=res.get('text', ''))
+            out.update(error=res.get('error') or ('stopped' if task.stopped else f'{ai_name()} did not write the narration'), summary=res.get('text', ''))
             return out
         progress('Making the voice (Kokoro) and the word timings...')
         wav, words = os.path.join(folder, name + '.wav'), os.path.join(folder, name + '.words.json')

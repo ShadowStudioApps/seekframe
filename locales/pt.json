@@ -373,5 +373,15 @@
  "Select all": "Selecionar tudo",
  "Type here what is wrong with the scene...": "Escreva aqui o que está errado na cena...",
  "Type or paste your idea here...": "Digite ou cole sua ideia aqui...",
- "Type a message for Claude... (Enter sends)": "Escreva uma mensagem para o Claude... (Enter envia)"
+ "Type a message for Claude... (Enter sends)": "Escreva uma mensagem para o Claude... (Enter envia)",
+ "AI:": "IA:",
+ "Fix the scene, YouTube text and New video use {0} (choose the AI in those windows). The Assistant chat always uses Claude Code.": "Corrigir a cena, Texto do YouTube e Novo vídeo usam {0} (escolha a IA nessas janelas). O chat do Assistente sempre usa o Claude Code.",
+ "No AI is signed in on this PC: Settings > AI connections shows how.": "Nenhuma IA está conectada neste PC: Configurações > Conexões de IA explica como.",
+ "The AI reads files and changes nothing in your scene until you press Apply.": "A IA lê arquivos e não muda nada na sua cena até você clicar em Aplicar.",
+ "looking for your AIs...": "procurando suas IAs...",
+ "{0} writes the script and the scene; Seekframe makes the voice and checks every frame.": "{0} escreve o roteiro e a cena; o Seekframe faz a voz e verifica cada quadro.",
+ "{0}: {1}.": "{0}: {1}.",
+ "{0} uses its own sign-in.": "{0} usa o próprio login.",
+ "signed in": "conectado",
+ "not installed": "não instalado"
 }

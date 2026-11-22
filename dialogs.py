@@ -259,6 +259,83 @@ class CheckWindow:
     def open_image(self):
         if self.res.get('sheet'): open_path(self.res['sheet'])
     def close(self): self.top.destroy()
+class AIPicker:
+    """3.37: which AI does this job - only the AIs installed and signed in on this PC (ai_tasks.available_engines, found in
+    a thread). The choice is app.engine / ai_tasks.ENGINE (setting ai.engine), the same in every AI window.
+    app.ai_available = [(key, name)] (tests) skips the search; with app.ai_task_kw (tests) only the current AI is shown."""
+    def __init__(self, parent, app, on_change=None):
+        import queue
+        import ai_tasks
+        self.app, self.ai, self.on_change, self.q = app, ai_tasks, on_change, queue.Queue()
+        self.frame = ttk.Frame(parent); self.btns = {}
+        ttk.Label(self.frame, text=tr('AI:')).pack(side='left')
+        self.box = ttk.Frame(self.frame); self.box.pack(side='left')
+        self.msg = ttk.Label(self.frame, text=tr('looking for your AIs...'), foreground='#888'); self.msg.pack(side='left', padx=(10, 0))
+        avail = getattr(app, 'ai_available', None)
+        if avail is None and getattr(app, 'ai_task_kw', None) is not None: avail = [(ai_tasks.ENGINE, ai_tasks.ENGINES[ai_tasks.ENGINE])]
+        if avail is not None: self.show(avail)
+        else:
+            threading.Thread(target=lambda: self.q.put(ai_tasks.available_engines()), daemon=True).start()
+            self._wait()
+    def _wait(self):
+        try: avail = self.q.get_nowait()
+        except Exception:
+            try: self.frame.after(150, self._wait)
+            except tk.TclError: pass
+            return
+        self.show(avail)
+    def show(self, avail):
+        if not self.frame.winfo_exists(): return
+        for w in self.box.winfo_children(): w.destroy()
+        self.btns = {}
+        if not avail:
+            self.msg.config(text=tr('No AI is signed in on this PC: Settings > AI connections shows how.'), foreground='#f85149'); return
+        keys = [k for k, _ in avail]
+        if self.ai.ENGINE not in keys:   # the saved AI is gone or signed out: take the first one that works
+            self.app.engine.set(keys[0]); self.app.on_engine(ready=lambda *a: (True, ''), toast=lambda *a: None)
+        self.app.engine.set(self.ai.ENGINE)
+        for k, n in avail:
+            rb = ttk.Radiobutton(self.box, text=n, value=k, variable=self.app.engine, command=self.pick)
+            rb.pack(side='left', padx=(10, 0)); self.btns[k] = rb
+        self.msg.config(text='')
+        if self.on_change: self.on_change()
+    def pick(self):
+        ok = self.app.on_engine(toast=lambda *a: None)
+        self.msg.config(text='' if ok else self.app.engine_lbl.cget('text'), foreground='#f85149')
+        if self.on_change: self.on_change()
+        return ok
+    def lock(self, on):   # no switching while a job runs
+        for b in self.btns.values(): b.state(['disabled'] if on else ['!disabled'])
+
+
+class Working:
+    """3.37: a moving bar + the time since the job started, so it is plain that the AI is working."""
+    def __init__(self, parent):
+        self.frame = ttk.Frame(parent)
+        self.bar = ttk.Progressbar(self.frame, mode='indeterminate', length=180)
+        self.clock = ttk.Label(self.frame, text='', foreground='#888', width=7)
+        self.t0 = None; self.job = None
+    def start(self):
+        import time
+        self.t0 = time.time()
+        self.bar.pack(side='left'); self.clock.pack(side='left', padx=(8, 0)); self.bar.start(12); self._tick()
+    def _tick(self):
+        import time
+        if self.t0 is None: return
+        s = int(time.time() - self.t0); self.clock.config(text=f'{s // 60}:{s % 60:02d}')
+        try: self.job = self.frame.after(1000, self._tick)
+        except tk.TclError: pass
+    def stop(self):
+        self.t0 = None
+        try:
+            if self.job: self.frame.after_cancel(self.job)
+            self.bar.stop(); self.bar.pack_forget(); self.clock.pack_forget()
+        except tk.TclError: pass
+        self.job = None
+    @property
+    def running(self): return self.t0 is not None
+
+
 class AIWindow:
     """AI... (3.19, Smart Shadow): Claude through the installed Claude Code on the owner's subscription (ai_tasks.py).
       Fix the scene  - Claude repairs a copy of the selected HTML scene (the problems Shadow found + the owner's own note);
@@ -281,16 +358,20 @@ class AIWindow:
         self.note = tk.Text(f, height=5, wrap='word', relief='solid', borderwidth=1, padx=8, pady=6, font='SunValleyBodyFont', undo=True); self.note.grid(row=2, column=0, sticky='nsew')
         style_input(self.note, app.theme == 'dark', hint=tr('Type here what is wrong with the scene...'))
         if problems: self.note.insert('1.0', '\n'.join(f'- {p}' for p in problems))
-        bt = ttk.Frame(f); bt.grid(row=3, column=0, sticky='w', pady=8)
+        hold = ttk.Frame(f); hold.grid(row=3, column=0, sticky='w', pady=8)
+        self.picker = AIPicker(hold, app); self.picker.frame.pack(anchor='w')
+        bt = ttk.Frame(hold); bt.pack(anchor='w', pady=(8, 0))
         self.fix_btn = ttk.Button(bt, text=tr('Fix the scene'), style='Accent.TButton', command=self.start_fix)
         self.fix_btn.pack(side='left')
         self.meta_btn = ttk.Button(bt, text=tr('Write YouTube text'), command=self.start_meta); self.meta_btn.pack(side='left', padx=(6, 0))
         self.stop_btn = ttk.Button(bt, text=tr('Stop'), command=self.stop); self.stop_btn.pack(side='left', padx=(6, 0))
         hint = [] if self.html else ['Fix works on HTML scenes only.']
         if not mp4: hint.append('YouTube text needs a rendered video of this row (render it first).')
-        ttk.Label(f, text='  '.join(hint) or 'Claude reads files and changes nothing in your scene until you press Apply.',
+        ttk.Label(f, text='  '.join(hint) or tr('The AI reads files and changes nothing in your scene until you press Apply.'),
                   foreground='#888').grid(row=4, column=0, sticky='w')
-        self.status = ttk.Label(f, text=''); self.status.grid(row=5, column=0, sticky='w', pady=(6, 2))
+        sr = ttk.Frame(f); sr.grid(row=5, column=0, sticky='w', pady=(6, 2))
+        self.working = Working(sr); self.working.frame.pack(side='left')
+        self.status = ttk.Label(sr, text=''); self.status.pack(side='left', padx=(8, 0))
         self.out = tk.Text(f, height=14, wrap='word', state='disabled', relief='solid', borderwidth=1, padx=8, pady=6, font='SunValleyBodyFont'); self.out.grid(row=6, column=0, sticky='nsew'); f.rowconfigure(6, weight=1)
         style_output(self.out, app.theme == 'dark')
         ab = ttk.Frame(f); ab.grid(row=7, column=0, sticky='e', pady=(10, 0))
@@ -315,6 +396,8 @@ class AIWindow:
         self.meta_btn.config(state='normal' if self.mp4 and not on else 'disabled')
         self.stop_btn.config(state='normal' if on else 'disabled')
         if on: self.apply_btn.config(state='disabled'); self.discard_btn.config(state='disabled')
+        if hasattr(self, 'working'):
+            (self.working.start if on else self.working.stop)(); self.picker.lock(on)
     def new_task(self, lang):
         kw = dict(getattr(self.app, 'ai_task_kw', {}))
         self.task = self.ai.Task(os.path.dirname(os.path.abspath(self.path)), (), on_event=lambda *e: self.q.put(('ev',) + e), lang=lang, **kw)
@@ -456,11 +539,15 @@ class NewVideoDialog:
         ttk.Label(f, text=tr('Save scenes in')).grid(row=5, column=0, sticky='w', pady=3)
         ttk.Entry(f, textvariable=self.root).grid(row=5, column=1, sticky='we', padx=8)
         ttk.Button(f, text=tr('Choose...'), command=self.choose_root).grid(row=5, column=2, sticky='w')
-        bt = ttk.Frame(f); bt.grid(row=6, column=0, columnspan=3, sticky='w', pady=8)
+        hold = ttk.Frame(f); hold.grid(row=6, column=0, columnspan=3, sticky='w', pady=8)
+        self.picker = AIPicker(hold, app, on_change=self._ai_hint); self.picker.frame.pack(anchor='w')
+        bt = ttk.Frame(hold); bt.pack(anchor='w', pady=(8, 0))
         self.go_btn = ttk.Button(bt, text=tr('Make the video'), style='Accent.TButton', command=self.start); self.go_btn.pack(side='left')
         self.stop_btn = ttk.Button(bt, text=tr('Stop'), command=self.stop, state='disabled'); self.stop_btn.pack(side='left', padx=(6, 0))
-        ttk.Label(bt, text=tr('  Claude writes the script and the scene; Seekframe makes the voice and checks every frame.'), foreground='#888').pack(side='left')
-        self.status = ttk.Label(f, text=''); self.status.grid(row=7, column=0, columnspan=3, sticky='w')
+        self.hint_lbl = ttk.Label(bt, text='', foreground='#888'); self.hint_lbl.pack(side='left', padx=(10, 0)); self._ai_hint()
+        sr = ttk.Frame(f); sr.grid(row=7, column=0, columnspan=3, sticky='w')
+        self.working = Working(sr); self.working.frame.pack(side='left')
+        self.status = ttk.Label(sr, text=''); self.status.pack(side='left', padx=(8, 0))
         self.out = tk.Text(f, height=12, wrap='word', state='disabled', relief='solid', borderwidth=1, padx=8, pady=6, font='SunValleyBodyFont'); self.out.grid(row=8, column=0, columnspan=3, sticky='nsew', pady=(4, 0))
         style_output(self.out, app.theme == 'dark')   # the progress log: flat, nothing to type in
         f.rowconfigure(8, weight=1)
@@ -486,6 +573,10 @@ class NewVideoDialog:
         self.out.insert('end', s); self.out.see('end'); self.out.config(state='disabled')
     def busy(self, on):
         self.go_btn.config(state='disabled' if on else 'normal'); self.stop_btn.config(state='normal' if on else 'disabled')
+        (self.working.start if on else self.working.stop)(); self.picker.lock(on)
+    def _ai_hint(self):
+        if hasattr(self, 'hint_lbl'):
+            self.hint_lbl.config(text=tr('{0} writes the script and the scene; Seekframe makes the voice and checks every frame.', self.ai.ai_name()))
 
     def start(self):
         if self.thread and self.thread.is_alive(): return None

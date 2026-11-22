@@ -866,7 +866,7 @@ class App(Root):
             ib.grid(row=i, column=3, sticky='w', padx=(12, 0), pady=1); ib.grid_remove()
             self.cli_rows[c.key] = dict(var=var, dot=dot, cb=cb, st=st, inst=ib)
         self.cli_missing = ttk.Label(mc, text='', foreground='#888', wraplength=round(700 * k), justify='left'); self.cli_missing.pack(anchor='w', pady=(4, 0))
-        er = self.engine_row = ttk.Frame(mc); er.pack(fill='x', pady=(8, 0))
+        er = self.engine_row = ttk.Frame(mc)   # 3.37: not shown - the AI is chosen in the New video / AI windows (AIPicker)
         self.cli_missing.pack_forget()   # shown only while another app uses Seekframe
         ttk.Label(er, text=tr("AI for Seekframe's own AI buttons:")).pack(side='left')
         self.engine = tk.StringVar(value=ai_tasks.ENGINE)
@@ -874,13 +874,14 @@ class App(Root):
         for key_, name in ai_tasks.ENGINES.items():
             b = ttk.Radiobutton(er, text=name, value=key_, variable=self.engine, command=self.on_engine); b.pack(side='left', padx=(12, 0))
             self.engine_btns[key_] = b
-        self.engine_lbl = ttk.Label(mc, text='', foreground='#888', wraplength=round(700 * k), justify='left'); self.engine_lbl.pack(anchor='w', pady=(4, 0))
+        self.engine_lbl = ttk.Label(mc, text='', foreground='#888', wraplength=round(700 * k), justify='left'); self.engine_lbl.pack(anchor='w', pady=(8, 0))
         # 3.34 how that AI signs in: the account / subscription, or an API key of that company (stored encrypted)
         ar = ttk.Frame(mc); ar.pack(fill='x', pady=(8, 0))
         self.auth_title = ttk.Label(ar, text=''); self.auth_title.pack(side='left')
         self.ai_auth = tk.StringVar(value='api_key' if self.cfg_ai.get('auth') == 'api_key' else 'subscription')
-        ttk.Radiobutton(ar, text=tr('Sign in with my account'), value='subscription', variable=self.ai_auth, command=self.on_ai_auth).pack(side='left', padx=(12, 0))
-        ttk.Radiobutton(ar, text=tr('API key (paid per use)'), value='api_key', variable=self.ai_auth, command=self.on_ai_auth).pack(side='left', padx=(12, 0))
+        self.auth_radios = [ttk.Radiobutton(ar, text=tr('Sign in with my account'), value='subscription', variable=self.ai_auth, command=self.on_ai_auth),
+                            ttk.Radiobutton(ar, text=tr('API key (paid per use)'), value='api_key', variable=self.ai_auth, command=self.on_ai_auth)]
+        for w in self.auth_radios: w.pack(side='left', padx=(12, 0))
         self.login_btn = ttk.Button(ar, text=tr('Sign in...'), command=self.ai_login); self.login_btn.pack(side='left', padx=(16, 0))
         self.acct_state = {}   # engine -> (signed in?, text) from ai_tasks.account_status (a thread)
         kr = ttk.Frame(mc); kr.pack(fill='x', pady=(6, 0))
@@ -1157,17 +1158,20 @@ class App(Root):
 
     def _engine_text(self):
         name = ai_tasks.ENGINES[ai_tasks.ENGINE]
-        self.engine_lbl.config(text=tr('Fix the scene, YouTube text and New video use {0}. The Assistant chat always uses Claude Code.', name), foreground='#888')
+        self.engine_lbl.config(text=tr('Fix the scene, YouTube text and New video use {0} (choose the AI in those windows). The Assistant chat always uses Claude Code.', name), foreground='#888')
         if hasattr(self, 'ai_auth'):   # the sign-in row shows the chosen AI's own choice
             self.auth_title.config(text=tr('How {0} signs in:', name))
-            mode = ('api_key' if ai_tasks.GEMINI_AUTH == 'api_key' else 'subscription') if ai_tasks.ENGINE == 'gemini' else assistant.AUTH_MODE
-            self.ai_auth.set(mode); self._key_status(); self.refresh_account()
+            mode = ('api_key' if ai_tasks.GEMINI_AUTH == 'api_key' else 'subscription') if ai_tasks.ENGINE == 'gemini' else \
+                   (assistant.AUTH_MODE if ai_tasks.ENGINE == 'claude' else 'subscription')
+            self.ai_auth.set(mode)
+            for w in self.auth_radios: w.state(['!disabled'] if ai_tasks.ENGINE in ('claude', 'gemini') else ['disabled'])   # no API keys for ChatGPT / Grok here
+            self._key_status(); self.refresh_account()
 
     def on_engine(self, ready=None, toast=None):
         """The AI for Seekframe's own AI buttons: checked first (installed + signed in), then saved, with a notification."""
         want = self.engine.get()
-        if want == 'gemini': ok, msg = (ready or ai_tasks.gemini_ready)(ai_tasks.find_gemini())
-        else: ok, msg = (ready or assistant.check_ready)(assistant.find_claude())
+        if ready: ok, msg = ready({'gemini': ai_tasks.find_gemini, 'codex': ai_tasks.find_codex, 'grok': ai_tasks.find_grok}.get(want, assistant.find_claude)())
+        else: ok, msg = ai_tasks.engine_ready(want)
         if not ok:
             self.engine.set(ai_tasks.ENGINE)
             self.engine_lbl.config(text=tr('{0} is not ready: {1}', ai_tasks.ENGINES[want], msg), foreground='#f85149'); return False
@@ -1277,6 +1281,12 @@ class App(Root):
         if wait: self.upload_q.join()
 
     def _key_status(self):
+        if ai_tasks.ENGINE in ('codex', 'grok'):   # 3.37: their own sign-in only (ChatGPT / Grok account)
+            st = self.acct_state.get(ai_tasks.ENGINE) if hasattr(self, 'acct_state') else None
+            name = ai_tasks.ENGINES[ai_tasks.ENGINE]
+            self.key_lbl.config(text=tr('{0}: {1}.', name, tr(st[1])) if st else tr('{0} uses its own sign-in.', name),
+                                foreground='#3fb950' if st and st[0] else ('#d29922' if st and st[0] is False else '#888'))
+            return
         if ai_tasks.ENGINE == 'gemini':
             key = ai_tasks.load_gemini_key()
             if self.ai_auth.get() == 'api_key':

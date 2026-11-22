@@ -373,5 +373,15 @@
  "Select all": "全选",
  "Type here what is wrong with the scene...": "在这里写下场景的问题...",
  "Type or paste your idea here...": "在这里输入或粘贴你的想法...",
- "Type a message for Claude... (Enter sends)": "给 Claude 写消息...（按 Enter 发送）"
+ "Type a message for Claude... (Enter sends)": "给 Claude 写消息...（按 Enter 发送）",
+ "AI:": "AI：",
+ "Fix the scene, YouTube text and New video use {0} (choose the AI in those windows). The Assistant chat always uses Claude Code.": "修复场景、YouTube 文案和新视频使用 {0}（在这些窗口中选择 AI）。助手聊天始终使用 Claude Code。",
+ "No AI is signed in on this PC: Settings > AI connections shows how.": "此电脑上没有已登录的 AI：设置 > AI 连接 中有说明。",
+ "The AI reads files and changes nothing in your scene until you press Apply.": "AI 只读取文件，在你点击“应用”之前不会改动场景。",
+ "looking for your AIs...": "正在查找你的 AI...",
+ "{0} writes the script and the scene; Seekframe makes the voice and checks every frame.": "{0} 编写脚本和场景；Seekframe 生成配音并检查每一帧。",
+ "{0}: {1}.": "{0}：{1}。",
+ "{0} uses its own sign-in.": "{0} 使用它自己的登录。",
+ "signed in": "已登录",
+ "not installed": "未安装"
 }

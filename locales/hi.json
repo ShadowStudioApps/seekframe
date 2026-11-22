@@ -373,5 +373,15 @@
  "Select all": "सब चुनें",
  "Type here what is wrong with the scene...": "यहाँ लिखें कि सीन में क्या गलत है...",
  "Type or paste your idea here...": "अपना आइडिया यहाँ लिखें या पेस्ट करें...",
- "Type a message for Claude... (Enter sends)": "Claude के लिए संदेश लिखें... (Enter भेजता है)"
+ "Type a message for Claude... (Enter sends)": "Claude के लिए संदेश लिखें... (Enter भेजता है)",
+ "AI:": "AI:",
+ "Fix the scene, YouTube text and New video use {0} (choose the AI in those windows). The Assistant chat always uses Claude Code.": "सीन ठीक करना, YouTube टेक्स्ट और नया वीडियो {0} इस्तेमाल करते हैं (AI उन्हीं विंडो में चुनें)। Assistant चैट हमेशा Claude Code इस्तेमाल करती है।",
+ "No AI is signed in on this PC: Settings > AI connections shows how.": "इस PC पर कोई AI साइन इन नहीं है: Settings > AI connections में तरीका है।",
+ "The AI reads files and changes nothing in your scene until you press Apply.": "AI फ़ाइलें पढ़ता है और Apply दबाने तक आपके सीन में कुछ नहीं बदलता।",
+ "looking for your AIs...": "आपके AI ढूँढे जा रहे हैं...",
+ "{0} writes the script and the scene; Seekframe makes the voice and checks every frame.": "{0} स्क्रिप्ट और सीन लिखता है; Seekframe आवाज़ बनाता है और हर फ्रेम जाँचता है।",
+ "{0}: {1}.": "{0}: {1}।",
+ "{0} uses its own sign-in.": "{0} अपना साइन-इन इस्तेमाल करता है।",
+ "signed in": "साइन इन",
+ "not installed": "इंस्टॉल नहीं"
 }

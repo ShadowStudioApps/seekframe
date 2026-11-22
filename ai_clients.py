@@ -78,7 +78,8 @@ def installed(key, env=None, home=None, which=shutil.which):
     if key == 'windsurf': return has(os.path.join(local, 'Programs', 'Windsurf'), os.path.join(roam, 'devin'), os.path.join(home, '.codeium', 'windsurf'))
     if key == 'gemini': return bool(which('gemini')) or has(os.path.join(home, '.gemini'))
     if key == 'codex': return bool(which('codex')) or has(os.path.join(home, '.codex')) or bool(glob.glob(os.path.join(local, 'Packages', 'OpenAI.Codex_*')))
-    if key == 'grok': return bool(which('grok')) or has(os.path.join(home, '.grok'))
+    if key == 'grok':   # 3.37: winget's own folder too (a Seekframe opened before the install still has the old PATH)
+        return bool(which('grok')) or has(os.path.join(home, '.grok')) or bool(glob.glob(os.path.join(local, 'Microsoft', 'WinGet', 'Packages', 'xAI.GrokBuild_*', 'grok.exe')))
     return False
 
 

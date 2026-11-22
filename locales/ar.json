@@ -373,5 +373,15 @@
  "Select all": "تحديد الكل",
  "Type here what is wrong with the scene...": "اكتب هنا ما المشكلة في المشهد...",
  "Type or paste your idea here...": "اكتب أو الصق فكرتك هنا...",
- "Type a message for Claude... (Enter sends)": "اكتب رسالة لـ Claude... (Enter للإرسال)"
+ "Type a message for Claude... (Enter sends)": "اكتب رسالة لـ Claude... (Enter للإرسال)",
+ "AI:": "الذكاء الاصطناعي:",
+ "Fix the scene, YouTube text and New video use {0} (choose the AI in those windows). The Assistant chat always uses Claude Code.": "إصلاح المشهد ونص يوتيوب وفيديو جديد تستخدم {0} (اختر الذكاء الاصطناعي في تلك النوافذ). محادثة المساعد تستخدم Claude Code دائماً.",
+ "No AI is signed in on this PC: Settings > AI connections shows how.": "لا يوجد ذكاء اصطناعي مسجّل الدخول على هذا الحاسوب: الإعدادات > اتصالات الذكاء الاصطناعي تشرح الطريقة.",
+ "The AI reads files and changes nothing in your scene until you press Apply.": "يقرأ الذكاء الاصطناعي الملفات ولا يغيّر شيئاً في مشهدك حتى تضغط «تطبيق».",
+ "looking for your AIs...": "البحث عن برامج الذكاء الاصطناعي لديك...",
+ "{0} writes the script and the scene; Seekframe makes the voice and checks every frame.": "{0} يكتب النص والمشهد؛ Seekframe يصنع الصوت ويفحص كل إطار.",
+ "{0}: {1}.": "{0}: {1}.",
+ "{0} uses its own sign-in.": "{0} يستخدم تسجيل دخوله الخاص.",
+ "signed in": "مسجّل الدخول",
+ "not installed": "غير مثبّت"
 }
