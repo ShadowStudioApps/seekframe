@@ -25,14 +25,18 @@ CLIENTS = [Client('claude_code', 'Claude Code', kind='claude_cli', exe_names=('c
            Client('vscode', 'VS Code (Copilot)', style='copilot', exe_names=('code.exe',)),
            Client('windsurf', 'Windsurf / Devin', exe_names=('windsurf.exe', 'devin.exe')),
            Client('gemini', 'Gemini CLI'),
-           Client('codex', 'Codex', kind='toml', exe_names=('codex.exe',))]
+           # 3.35: the ChatGPT desktop app (winget OpenAI.ChatGPT = the Store package OpenAI.Codex, ChatGPT.exe + Codex.exe)
+           # and Codex CLI share ~/.codex/config.toml, so one row covers both
+           Client('codex', 'ChatGPT / Codex', kind='toml', exe_names=('codex.exe', 'chatgpt.exe')),
+           # 3.35: xAI's Grok Build (the `grok` CLI): ~/.grok/config.toml, [mcp_servers.<name>] like Codex (docs.x.ai)
+           Client('grok', 'Grok Build', kind='toml', exe_names=('grok.exe',))]
 BY_KEY = {c.key: c for c in CLIENTS}
 # 3.34: what to paste in a terminal to install a missing app (winget IDs checked with `winget show --exact`, 2026-11-22;
 # Gemini CLI is not in winget: npm, which needs Node.js)
 INSTALL = {'claude_code': 'winget install -e --id Anthropic.ClaudeCode', 'claude_desktop': 'winget install -e --id Anthropic.Claude',
            'cursor': 'winget install -e --id Anysphere.Cursor', 'vscode': 'winget install -e --id Microsoft.VisualStudioCode',
            'windsurf': 'winget install -e --id Codeium.Windsurf', 'gemini': 'npm install -g @google/gemini-cli',
-           'codex': 'winget install -e --id OpenAI.Codex'}
+           'codex': 'winget install -e --id OpenAI.ChatGPT', 'grok': 'winget install -e --id xAI.GrokBuild'}
 
 
 def _dirs(env=None, home=None):
@@ -56,6 +60,7 @@ def config_path(key, env=None, home=None):
         return old if os.path.isfile(old) and not os.path.isdir(os.path.join(roam, 'devin')) else os.path.join(roam, 'devin', 'mcp_config.json')
     if key == 'gemini': return os.path.join(home, '.gemini', 'settings.json')
     if key == 'codex': return os.path.join(home, '.codex', 'config.toml')
+    if key == 'grok': return os.path.join(home, '.grok', 'config.toml')
     raise KeyError(key)
 
 
@@ -72,7 +77,8 @@ def installed(key, env=None, home=None, which=shutil.which):
     if key == 'vscode': return bool(which('code')) or has(os.path.join(local, 'Programs', 'Microsoft VS Code'), os.path.join(home, '.copilot'))
     if key == 'windsurf': return has(os.path.join(local, 'Programs', 'Windsurf'), os.path.join(roam, 'devin'), os.path.join(home, '.codeium', 'windsurf'))
     if key == 'gemini': return bool(which('gemini')) or has(os.path.join(home, '.gemini'))
-    if key == 'codex': return bool(which('codex')) or has(os.path.join(home, '.codex'))
+    if key == 'codex': return bool(which('codex')) or has(os.path.join(home, '.codex')) or bool(glob.glob(os.path.join(local, 'Packages', 'OpenAI.Codex_*')))
+    if key == 'grok': return bool(which('grok')) or has(os.path.join(home, '.grok'))
     return False
 
 
@@ -220,6 +226,7 @@ def client_of(chain):
     for p in chain:
         name = (p.get('Name') or '').lower(); path = (p.get('ExecutablePath') or '').lower(); cmd = (p.get('Cmd') or '').lower()
         if 'windowsapps\\claude_' in path or 'anthropicclaude' in path: return 'claude_desktop'
+        if 'windowsapps\\openai.codex_' in path: return 'codex'   # the ChatGPT desktop app
         if name == 'node.exe' and 'gemini' in cmd: return 'gemini'
         if name == 'node.exe' and '@anthropic-ai' in cmd: return 'claude_code'
         for c in CLIENTS:

@@ -23,7 +23,7 @@ def check(name, ok, info=''):
 
 TMP = tempfile.mkdtemp(prefix='shadow_fields_'); app.LOG = os.path.join(TMP, 'l.log'); app.close_log()
 no_dialogs.block(app)
-app.save_cfg = lambda d: None
+app.save_cfg = lambda d: None; app.load_cfg = lambda: {}   # never the owner's own settings
 app.App.start_update_check = lambda *a, **k: None
 popped = []
 tk.Menu.tk_popup = lambda self, x, y, entry='': popped.append(self)   # never a real menu on the owner's screen

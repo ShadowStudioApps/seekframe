@@ -64,7 +64,7 @@ sidebar (Seekframe remembers it).
     it uses rclone, which *Get rclone* downloads for you). Then **Cloud...** in the Queue adds files from there (a scene
     brings its whole folder), and *Also upload finished videos to* sends each finished video to `Seekframe/...` there.
   - *AI connections*: a tick box for every AI app on this PC (Claude Code, Claude Desktop, Cursor, VS Code Copilot,
-    Windsurf / Devin, Gemini CLI, Codex). Tick one and Seekframe sets itself up in that app (restart the app if it is
+    Windsurf / Devin, Gemini CLI, ChatGPT / Codex, Grok Build). Tick one and Seekframe sets itself up in that app (restart the app if it is
     open); green = connected, *In use now* = it is running Seekframe. Windows shows a notification when one connects.
     Below: which AI does Seekframe's own AI buttons (Claude Code or Gemini CLI); the Assistant chat always uses Claude Code.
     An app that is not installed shows **Copy install command** (paste it in a terminal, then Re-check).

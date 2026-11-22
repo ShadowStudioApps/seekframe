@@ -9,6 +9,9 @@ themselves: Seekframe shows **Update to vX.Y** when a new release is out.
   Read-only boxes (progress logs) stay flat, so nobody types into the wrong one. New video (AI) starts with the cursor in the idea box.
 - Ctrl+V / C / X / A / Z work with an Arabic (or any non-Latin) keyboard layout; right-click on any text field gives
   Cut / Copy / Paste / Select all.
+- **AI connections**: **ChatGPT** and **Grok** added. The ChatGPT desktop app and Codex share one settings file, so they
+  share one row (*ChatGPT / Codex*); **Grok Build** (xAI's `grok`) gets its own row. Missing ones offer their winget
+  install command (OpenAI.ChatGPT, xAI.GrokBuild).
 
 ## 3.34
 - *Save videos to* keeps only **This PC** and **Network drive (NAS)...** (plus Browse... and Check access): the cloud-app

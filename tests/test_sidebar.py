@@ -25,6 +25,7 @@ def check(name, ok, info=''):
 TMP = tempfile.mkdtemp(prefix='shadow_sidebar_'); app.LOG = os.path.join(TMP, 'l.log'); app.close_log()
 no_dialogs.block(app)
 saved = {}; app.save_cfg = lambda d: saved.update(d)
+app.load_cfg = lambda: {}   # never the owner's own settings (his AI choice, theme, ...)
 app.App.start_update_check = lambda *a, **k: None
 w = app.App()
 try:
@@ -151,7 +152,7 @@ try:
     r['cursor']['var'].set(False); w.on_client('cursor', wait=True, toast=T, home=home); w.update(); _t.sleep(0.3); w.update()
     check('S8 un-ticking removes it again', 'shadow' not in open(cfg).read() and not r['cursor']['var'].get())
     # which AI does Seekframe's own AI buttons
-    check('S8 Claude Code does the AI jobs by default', w.engine.get() == 'claude' and app.ai_tasks.ENGINE == 'claude')
+    check('S8 Claude Code does the AI jobs by default', w.engine.get() == 'claude' and app.ai_tasks.ENGINE == 'claude', (w.engine.get(), app.ai_tasks.ENGINE, w.cfg_ai))
     n0 = len(toasts)
     w.engine.set('gemini'); ok = w.on_engine(ready=lambda c: (False, 'not signed in'), toast=T)
     check('S8 an AI that is not ready is refused, the choice stays', ok is False and w.engine.get() == 'claude' and app.ai_tasks.ENGINE == 'claude'

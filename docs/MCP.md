@@ -28,9 +28,9 @@ Check: `claude mcp list` should show `shadow: ... - Connected`. In a session, `/
 Remove: `claude mcp remove shadow --scope user`.
 
 **Easiest (3.32):** Seekframe > Settings > *AI connections*: tick the app (Claude Code, Claude Desktop, Cursor, VS Code,
-Windsurf / Devin, Gemini CLI, Codex) and Seekframe writes the entry below into that app's settings for you (only its own
+Windsurf / Devin, Gemini CLI, ChatGPT / Codex, Grok Build) and Seekframe writes the entry below into that app's settings for you (only its own
 `shadow` entry; the old file is kept as `<file>.seekframe-backup`). The Microsoft Store build of Claude Desktop keeps its
-file in `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude\`. Codex: `%USERPROFILE%\.codex\config.toml`,
+file in `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude\`. ChatGPT desktop / Codex: `%USERPROFILE%\.codex\config.toml` (one file for both); Grok Build: `%USERPROFILE%\.grok\config.toml` (same `[mcp_servers.shadow]` table),
 table `[mcp_servers.shadow]` with `command` and `args`.
 
 Claude Desktop, Cursor, VS Code, Windsurf, Gemini CLI by hand: see *Other AI clients* below. Inside the Seekframe window there is

@@ -33,7 +33,7 @@ try:
     os.makedirs(os.path.join(HOME, '.gemini')); os.makedirs(os.path.join(HOME, '.codex'))
     inst = {c.key: ac.installed(c.key, ENV, which=no_which) for c in ac.CLIENTS if c.key != 'claude_code'}
     check('C1 found: Claude Desktop (Store), Gemini CLI, Codex; not: Cursor, VS Code, Windsurf',
-          inst == dict(claude_desktop=True, cursor=False, vscode=False, windsurf=False, gemini=True, codex=True), inst)
+          inst == dict(claude_desktop=True, cursor=False, vscode=False, windsurf=False, gemini=True, codex=True, grok=False), inst)
     check('C1 Claude Desktop Store build: config in its virtual AppData', ac.config_path('claude_desktop', ENV).endswith(
           os.path.join('Claude_abc', 'LocalCache', 'Roaming', 'Claude', 'claude_desktop_config.json')))
     # C2 JSON
@@ -67,6 +67,20 @@ try:
     check('C3 connecting twice keeps one table', open(t, encoding='utf-8').read().count('[mcp_servers.shadow]') == 1)
     ok, msg = ac.disconnect('codex', ENV); d = tomllib.load(open(t, 'rb'))
     check('C3 disconnect removes the table only', ok and 'mcp_servers' not in d and d['desktop'] == {'foo': 1} and d['plugins']['a@b'], d)
+    # C3b (3.35) Grok Build: ~/.grok/config.toml, same [mcp_servers.<name>] table; ChatGPT desktop shares Codex's file
+    gk = ac.config_path('grok', ENV)
+    check('C3b Grok Build config is ~/.grok/config.toml', gk == os.path.join(HOME, '.grok', 'config.toml'))
+    ok, msg = ac.connect('grok', CMD, ENV); d = tomllib.load(open(gk, 'rb'))
+    check('C3b Grok Build: [mcp_servers.shadow] written', ok and d['mcp_servers']['shadow'] == {'command': CMD[0], 'args': CMD[1:]}, (ok, msg))
+    check('C3b Grok Build found once its folder exists', ac.installed('grok', ENV, which=no_which))
+    ok, msg = ac.disconnect('grok', ENV); check('C3b Grok Build disconnect', ok and ac.read_entry('grok', ENV) is None)
+    os.makedirs(os.path.join(ENV['LOCALAPPDATA'], 'Packages', 'OpenAI.Codex_2p2nqsd0c76g0'))
+    check('C3b ChatGPT desktop (Store package OpenAI.Codex) counts as ChatGPT / Codex installed', ac.BY_KEY['codex'].name == 'ChatGPT / Codex')
+    check('C3b a server started by ChatGPT.exe is ChatGPT / Codex', ac.client_of([{'Name': 'ChatGPT.exe',
+          'ExecutablePath': r'C:\Program Files\WindowsApps\OpenAI.Codex_1_x64__2p2nqsd0c76g0\app\ChatGPT.exe'}]) == 'codex'
+          and ac.client_of([{'Name': 'grok.exe', 'ExecutablePath': r'C:\x\grok.exe'}]) == 'grok')
+    check('C3b install commands: ChatGPT and Grok Build by winget', ac.INSTALL['codex'] == 'winget install -e --id OpenAI.ChatGPT'
+          and ac.INSTALL['grok'] == 'winget install -e --id xAI.GrokBuild')
     # C4 Claude Code through its CLI
     calls = []
     class R:
