@@ -3,6 +3,15 @@
 Every release is on the [Releases](../../releases) page with its `Seekframe-<version>-Setup.exe`. Installed copies update
 themselves: Seekframe shows **Update to vX.Y** when a new release is out.
 
+## 3.28
+- **A calmer window with a sidebar**: Queue, New video, AI tools, YouTube, Project and Assistant on the left; the
+  render options, the setup check and the language moved to their own **Settings** page, so the Queue page shows just
+  your scenes (with a one-line summary of the options that opens Settings). The ☰ button hides or shows the sidebar,
+  and Seekframe remembers your choice.
+- **About** page: version, Shadow Studio, and links to the GitHub page, the user guide, what's new, the privacy policy
+  and "Report a problem".
+- The top bar shows just the page name (the "HTML scene → MP4" line is gone).
+
 ## 3.27
 - **Silent installs finish on their own**: `Seekframe-X.Y-Setup.exe /SILENT` (and installs through winget) no longer
   try to install Chrome / ffmpeg in a console window that waits for an answer. A normal (double-click) install still offers

@@ -10,7 +10,7 @@ import argparse, fnmatch, io, os, shutil, subprocess, sys, tarfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # what goes public (paths or globs, matched against files tracked in HEAD); everything else stays private
 PUBLIC = ['app.py', 'assistant.py', 'docs/ASSISTANT.md', 'render_core.py', 'blender_core.py', 'qc.py', 'updater.py', 'frame_check.py', 'subtitles.py', 'tools/blender/*', 'tools/mcp_server.py',
-          'tools/check_frames.py', 'docs/MCP.md', 'docs/BLENDER.md', 'claude-skills/shadow-mcp/*', 'CHANGELOG.md', 'docs/banner.png', 'docs/demo.gif', 'docs/screenshot_light.png', 'docs/screenshot_ai_new.png', 'docs/screenshot_ai_fix.png', 'docs/screenshot_arabic.png',
+          'tools/check_frames.py', 'docs/MCP.md', 'docs/BLENDER.md', 'claude-skills/shadow-mcp/*', 'CHANGELOG.md', 'docs/banner.png', 'docs/demo.gif', 'docs/screenshot_light.png', 'docs/screenshot_ai_new.png', 'docs/screenshot_ai_fix.png', 'docs/screenshot_arabic.png', 'docs/screenshot_about.png',
           'docs/social_preview.png', '.github/ISSUE_TEMPLATE/*', 'tools/make_brand_images.py', 'README.md', 'LICENSE', '.gitignore',
           'install.bat', 'build_exe.bat', 'build_installer.bat', 'release.bat', 'run.bat', 'publish_update.bat',
           'installer/shadow.iss', 'assets/shadow.ico', 'assets/shadow_1024.png', 'docs/screenshot.png',

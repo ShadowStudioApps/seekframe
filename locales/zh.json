@@ -237,5 +237,22 @@
  "narration": "旁白",
  "scene sound (no file)": "场景声音(无文件)",
  "scene sound": "场景声音",
- "silent": "静音"
+ "silent": "静音",
+ "Queue": "队列",
+ "New video": "新视频",
+ "AI tools": "AI 工具",
+ "Settings": "设置",
+ "About": "关于",
+ "Version {0}": "版本 {0}",
+ "by Shadow Studio": "出品:Shadow Studio",
+ "A free, open-source app that turns code-made scenes (HTML and Blender) into finished videos for YouTube and Shorts, with a quality check on every video.": "一款免费开源的应用,把用代码制作的场景(HTML 和 Blender)变成适合 YouTube 和 Shorts 的成品视频,每个视频都会做质量检查。",
+ "Seekframe was called Shadow until version 3.24.": "Seekframe 在 3.24 版之前名为 Shadow。",
+ "GitHub page": "GitHub 页面",
+ "User guide": "用户指南",
+ "What's new": "新功能",
+ "Report a problem": "报告问题",
+ "Privacy policy": "隐私政策",
+ "Shadow Studio": "Shadow Studio",
+ "MIT license. Made with Python, Playwright, ffmpeg and sv-ttk; the AI features use your own Claude Code.": "MIT 许可证。使用 Python、Playwright、ffmpeg 和 sv-ttk 制作;AI 功能使用你自己的 Claude Code。",
+ "Missing: {0}. Open Settings to install.": "缺少:{0}。请打开设置进行安装。"
 }

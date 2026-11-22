@@ -237,5 +237,22 @@
  "narration": "narasi",
  "scene sound (no file)": "suara adegan (tanpa file)",
  "scene sound": "suara adegan",
- "silent": "senyap"
+ "silent": "senyap",
+ "Queue": "Antrean",
+ "New video": "Video baru",
+ "AI tools": "Alat AI",
+ "Settings": "Pengaturan",
+ "About": "Tentang",
+ "Version {0}": "Versi {0}",
+ "by Shadow Studio": "oleh Shadow Studio",
+ "A free, open-source app that turns code-made scenes (HTML and Blender) into finished videos for YouTube and Shorts, with a quality check on every video.": "Aplikasi gratis dan sumber terbuka yang mengubah adegan buatan kode (HTML dan Blender) menjadi video jadi untuk YouTube dan Shorts, dengan pemeriksaan kualitas di setiap video.",
+ "Seekframe was called Shadow until version 3.24.": "Seekframe bernama Shadow hingga versi 3.24.",
+ "GitHub page": "Halaman GitHub",
+ "User guide": "Panduan",
+ "What's new": "Yang baru",
+ "Report a problem": "Laporkan masalah",
+ "Privacy policy": "Kebijakan privasi",
+ "Shadow Studio": "Shadow Studio",
+ "MIT license. Made with Python, Playwright, ffmpeg and sv-ttk; the AI features use your own Claude Code.": "Lisensi MIT. Dibuat dengan Python, Playwright, ffmpeg, dan sv-ttk; fitur AI memakai Claude Code milik Anda.",
+ "Missing: {0}. Open Settings to install.": "Belum ada: {0}. Buka Pengaturan untuk memasang."
 }

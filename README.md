@@ -70,8 +70,8 @@ Every button, option, output file and QC check is explained in the **[user guide
 | **Free and offline** | No Seekframe account, no paid services. Rendering runs on your PC; nothing leaves it unless you press *Upload* (to your own YouTube channel) or one of the AI buttons (through your own Claude Code - see the [privacy policy](docs/PRIVACY.md)). Only your scenes' own CDN links (e.g. three.js) need the internet. |
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="Seekframe 3.23, dark theme: a song video and its Short in the queue, with New video (AI), the language list and the AI... button" width="49%">
-  <img src="docs/screenshot_light.png" alt="Seekframe 3.23, light theme" width="49%">
+  <img src="docs/screenshot.png" alt="Seekframe 3.28, dark theme: the sidebar (Queue, New video, AI tools, YouTube, Project, Assistant, Settings, About) and a song video and its Short in the queue" width="49%">
+  <img src="docs/screenshot_light.png" alt="Seekframe 3.28, light theme" width="49%">
 </p>
 
 <p align="center">

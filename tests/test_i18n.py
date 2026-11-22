@@ -28,9 +28,11 @@ for fn in ('app.py', 'dialogs.py'):
     for n in ast.walk(ast.parse(open(os.path.join(ROOT, fn), encoding='utf-8').read())):
         if isinstance(n, ast.Call) and getattr(n.func, 'id', '') == 'tr' and n.args and isinstance(n.args[0], ast.Constant): ids.add(n.args[0].value)
 BRAND = {'Seekframe', 'Seekframe v{0}', 'Seekframe - {0}', 'YouTube'}
+# 3.28 sidebar / page labels reach tr() through a variable: check them too
+NAV = {'Queue', 'New video', 'AI tools', 'Settings', 'About', 'GitHub page', 'User guide', "What's new", 'Report a problem', 'Privacy policy', 'Shadow Studio', 'by Shadow Studio'}
 slots = lambda s: sorted(re.findall(r'\{\d*\}', s))
 for code, d in sorted(LOC.items()):
-    miss = sorted(i for i in ids - BRAND if i not in d)
+    miss = sorted(i for i in (ids | NAV) - BRAND if i not in d)
     check(f'L1 {code}: every tr() text translated', not miss, miss[:5])
     bad = [k for k, v in d.items() if not k.startswith('_') and slots(k) != slots(v)]
     check(f'L1 {code}: the same {{0}} slots as English', not bad, bad[:3])

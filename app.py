@@ -574,14 +574,18 @@ class App(Root):
         # Assistant panel (assistant.py: Claude Code CLI headless, the owner's subscription). ai_kw: tests pass a fake CLI
         self.ai = None; self.ai_kw = {}; self.ai_dir_choice = cfg.get('assistant_dir', ''); self.ai_open = bool(cfg.get('assistant_open', False))
         self.ai_pending = None; self.ai_t0 = None; self.ai_last = None
+        self.side_open = bool(cfg.get('sidebar', True))   # 3.28: the sidebar, shown or hidden by the menu button
         self.protocol('WM_DELETE_WINDOW', self.on_close)
         self.apply_theme()
         self.build()
         self.apply_theme(refresh=True)   # sv-ttk set before the widgets exist leaves wrong fonts/colours on the first pass
         self.check()
-        self.update_idletasks()   # size the window to its content (fonts scale with the display DPI)
-        w, h = max(self.winfo_reqwidth(), int(self.winfo_fpixels('7i'))), self.winfo_reqheight() + int(self.winfo_fpixels('0.3i'))
-        self.minsize(self.winfo_reqwidth(), self.winfo_reqheight()); self.geometry(f'{w}x{h}')
+        self.update_idletasks()   # size the window to its content (fonts scale with the display DPI), the tallest page counts
+        rw, rh = self.winfo_reqwidth(), self.winfo_reqheight()
+        for n in ('settings', 'about', 'queue'):
+            self.show_page(n); self.update_idletasks(); rw, rh = max(rw, self.winfo_reqwidth()), max(rh, self.winfo_reqheight())
+        w, h = max(rw, int(self.winfo_fpixels('8i'))), rh + int(self.winfo_fpixels('0.3i'))
+        self.minsize(rw, rh); self.geometry(f'{w}x{h}')
         self._poll_id = self.after(150, self.poll)
         self.update_rel = None; self.update_busy = False; self.update_checking = False
         self.after(2500, self.start_update_check)
@@ -653,39 +657,55 @@ class App(Root):
         self.update_busy = False; self.update_btn.config(state='normal'); self.go.config(state='normal')
         self.status.config(text=tr('Update failed')); messagebox.showerror(tr('Update'), tr('{0}\n\nYou can also download the setup from:\n{1}', msg, self.update_rel.get('page') or updater.REPO))
 
-    # ------------------------------------------------------------------ layout
+    # ------------------------------------------------------------------ layout (3.28: sidebar + pages)
+    # Icons from Windows' own icon font (Segoe Fluent Icons on Windows 11, Segoe MDL2 Assets on 10); text only without them.
+    NAV_ICONS = {'menu': '', 'queue': '', 'new': '', 'ai': '', 'youtube': '', 'project': '',
+                 'assistant': '', 'settings': '', 'about': ''}
+    SIDE_COLORS = {'dark': dict(bg='#191b1f', hover='#262a31', sel='#2f3640', fg='#c8ccd4', fg_sel='#ffffff', muted='#7d8491', line='#2a2e35'),
+                   'light': dict(bg='#e4e4e2', hover='#d8d8d5', sel='#cdd5e3', fg='#2b2b2b', fg_sel='#101010', muted='#6b6b6b', line='#d0d0cc')}
+
     def build(self):
         P = 14
-        top = ttk.Frame(self); top.pack(fill='x', padx=P, pady=(P, 6))
-        ttk.Label(top, text=tr('Seekframe'), font='SunValleyTitleLargeFont').pack(side='left')
-        ttk.Label(top, text=tr('  v{0}   HTML scene → MP4', rc.VERSION), foreground='#888').pack(side='left', pady=(6, 0))
-        self.theme_btn = ttk.Button(top, width=9, command=self.toggle_theme); self.theme_btn.pack(side='right')
-        # 3.20 language: 'Auto' = Windows' language when Shadow has it; a change asks to restart
-        self.lang_names = [tr('Auto (Windows)')] + list(i18n.LANGS.values())
-        self.lang_var = tk.StringVar(value=self.lang_names[0] if self.lang_choice == 'auto' else i18n.LANGS.get(self.lang_choice, 'English'))
-        self.lang_box = ttk.Combobox(top, textvariable=self.lang_var, values=self.lang_names, state='readonly', width=16)
-        self.lang_box.pack(side='right', padx=(0, 8)); self.lang_box.bind('<<ComboboxSelected>>', lambda e: self.on_language())
-        # 'Check for updates'; becomes the accent 'Update to vX.Y' once a newer release is found
-        self.update_btn = ttk.Button(top, text=tr('Check for updates'), command=self.on_update_btn); self.update_btn.pack(side='right', padx=(0, 8))
-        self.ai_btn = ttk.Button(top, text=tr('Assistant'), command=self.toggle_assistant); self.ai_btn.pack(side='right', padx=(0, 8))
-        self.proj_btn = ttk.Button(top, text=tr('Project'), command=self.project_menu); self.proj_btn.pack(side='right', padx=(0, 8))
-        self.new_btn = ttk.Button(top, text=tr('New video (AI)...'), style='Accent.TButton', command=self.open_new_video)
-        self.new_btn.pack(side='right', padx=(0, 8))
-        self._top = top
+        k = self.winfo_fpixels('1i') / 96
+        try:
+            import tkinter.font as tkf
+            fams = set(tkf.families(self))
+            self.icon_font = next((f for f in ('Segoe Fluent Icons', 'Segoe MDL2 Assets') if f in fams), None)
+        except Exception:
+            self.icon_font = None
+        # ---- sidebar (can be hidden: the menu button, setting 'sidebar')
+        self.side = tk.Frame(self, width=round(200 * k)); self.side.pack_propagate(False)
+        self.body = ttk.Frame(self)
+        self.side.pack(side='left', fill='y'); self.body.pack(side='left', fill='both', expand=True)
+        self.nav = {}
+        brand = tk.Frame(self.side); brand.pack(fill='x', padx=12, pady=(16, 14))
+        self.side_title = tk.Label(brand, text='Seekframe', font='SunValleySubtitleFont', anchor='w'); self.side_title.pack(fill='x')
+        self.side_ver = tk.Label(brand, text=f'v{rc.VERSION}', anchor='w'); self.side_ver.pack(fill='x')
+        for key, text, cmd in (('queue', 'Queue', lambda: self.show_page('queue')), ('new', 'New video', self.open_new_video),
+                               ('ai', 'AI tools', self.open_ai), ('youtube', 'YouTube...', self.open_youtube_dialog),
+                               ('project', 'Project', self.project_menu), ('assistant', 'Assistant', self.toggle_assistant)):
+            self._nav_item(key, tr(text), cmd)
+        self.update_btn = ttk.Button(self.side, text=tr('Check for updates'), command=self.on_update_btn)
+        self.update_btn.pack(side='bottom', fill='x', padx=10, pady=(6, 14))
+        for key, text in (('about', 'About'), ('settings', 'Settings')):
+            self._nav_item(key, tr(text), lambda k_=key: self.show_page(k_), side='bottom')
+        self.ai_btn = self.nav['assistant']; self.proj_btn = self.nav['project']; self.new_btn = self.nav['new']
+
+        # ---- header of the page area: menu button, page title, theme
+        hdr = ttk.Frame(self.body); hdr.pack(fill='x', padx=P, pady=(P, 6))
+        self.menu_btn = ttk.Button(hdr, text=self.NAV_ICONS['menu'] if self.icon_font else '≡', width=3, command=self.toggle_sidebar)
+        if self.icon_font:
+            st = ttk.Style(self); st.configure('Icon.TButton', font=(self.icon_font, 11)); self.menu_btn.config(style='Icon.TButton')
+        self.menu_btn.pack(side='left')
+        self.page_title = ttk.Label(hdr, text='', font='SunValleySubtitleFont'); self.page_title.pack(side='left', padx=(10, 0))
+        self.theme_btn = ttk.Button(hdr, width=9, command=self.toggle_theme); self.theme_btn.pack(side='right')
+        self._top = hdr
         self._theme_text()
+        self.pages = {n: ttk.Frame(self.body) for n in ('queue', 'settings', 'about')}
 
-        # compact setup status bar
-        env = ttk.Frame(self); env.pack(fill='x', padx=P)
-        self.env_lbls = {}
-        for k in ('Chrome', 'ffmpeg', 'playwright', 'Blender'):
-            dot = ttk.Label(env, text='●'); dot.pack(side='left'); txt = ttk.Label(env, text=k); txt.pack(side='left', padx=(3, 14))
-            self.env_lbls[k] = (dot, txt)
-        ttk.Button(env, text=tr('Install missing'), command=self.install_missing).pack(side='right')
-        self.selftest_btn = ttk.Button(env, text=tr('Self-test'), command=self.run_selftest); self.selftest_btn.pack(side='right')
-        ttk.Button(env, text=tr('Re-check'), command=self.check).pack(side='right', padx=6)
-
-        # drop area + table
-        card = ttk.LabelFrame(self, text=tr('Scenes'), padding=10); card.pack(fill='both', expand=True, padx=P, pady=10)
+        # ==== Queue page: scenes, progress, actions
+        qp = self.pages['queue']
+        card = ttk.LabelFrame(qp, text=tr('Scenes'), padding=10); card.pack(fill='both', expand=True, padx=P, pady=(4, 10))
         dz = ttk.Frame(card, style='Card.TFrame', padding=14, cursor='hand2'); dz.pack(fill='x')
         self.drop = ttk.Label(dz, anchor='center', cursor='hand2', font='SunValleyBodyLargeFont',
                               text=(tr('⤓   Drop .html or .blend scenes here, or click to browse') if HAS_DND else tr('Click to add .html or .blend scenes')))
@@ -696,8 +716,7 @@ class App(Root):
         # values: name, status, dur, audio, fmt, time (new columns go last so older code/tests keep their indices)
         # time: the estimate before the render (~3 min), the time left while it renders, how long it took when finished
         self.tree = ttk.Treeview(tf, columns=('name', 'status', 'dur', 'audio', 'fmt', 'time'), displaycolumns=('name', 'status', 'dur', 'time', 'fmt', 'audio'),
-                                 show='headings', height=6, selectmode='extended')
-        k = self.winfo_fpixels('1i') / 96
+                                 show='headings', height=8, selectmode='extended')
         for c, t, w, st in (('name', 'Name', 300, True), ('status', 'Status', 200, True), ('dur', 'Duration', 80, False),
                             ('audio', 'Audio', 170, True), ('fmt', 'Format', 70, False), ('time', 'Time', 90, False)):
             self.tree.heading(c, text=tr(t), anchor='w'); self.tree.column(c, width=round(w * k), minwidth=round(60 * k), stretch=st, anchor='w')
@@ -717,9 +736,30 @@ class App(Root):
             bt.columnconfigure(i, weight=1, uniform='b')
         self.check_btn = btns['Check frames']
         self.narr_btn = btns['Narration...']; self.narr_btn.config(state='disabled')   # enabled when one row is selected that can take narration
+        # the options in one line; a click opens Settings
+        self.opt_line = ttk.Label(qp, text='', foreground='#888', cursor='hand2'); self.opt_line.pack(fill='x', padx=P)
+        self.opt_line.bind('<Button-1>', lambda e: self.show_page('settings'))
+        pr = ttk.Frame(qp); pr.pack(fill='x', padx=P, pady=(10, 0))
+        self.bar = ttk.Progressbar(pr, maximum=100); self.bar.pack(side='left', fill='x', expand=True)
+        self.pct = ttk.Label(pr, text='0%', width=16, anchor='e'); self.pct.pack(side='right', padx=(10, 0))
+        sl = ttk.Frame(qp); sl.pack(fill='x', padx=P, pady=(4, 0))
+        self.eta_lbl = ttk.Label(sl, text='', foreground='#888'); self.eta_lbl.pack(side='right')   # whole queue: about 12 min · done ~15:40
+        self.status = ttk.Label(sl, text=tr('Ready'), foreground='#888'); self.status.pack(side='left')
+        act = ttk.Frame(qp); act.pack(fill='x', padx=P, pady=P)
+        self.go = ttk.Button(act, text=tr('Render'), style='Accent.TButton', command=self.start)
+        self.stop_cur = ttk.Button(act, text=tr('Cancel current'), command=self.do_cancel_current, state='disabled')
+        self.stop = ttk.Button(act, text=tr('Stop queue'), command=self.do_cancel, state='disabled')
+        self.yt_btn = ttk.Button(act, text=tr('YouTube...'), command=self.open_youtube_dialog)
+        for i, w in enumerate((self.go, self.stop_cur, self.stop, ttk.Button(act, text=tr('Open folder'), command=self.open_out), ttk.Button(act, text=tr('Open log'), command=self.open_log), self.yt_btn)):
+            w.grid(row=0, column=i, sticky='we', padx=(0 if i == 0 else 6, 0)); act.columnconfigure(i, weight=1, uniform='a')
+        chk = ttk.Frame(act); chk.grid(row=1, column=0, columnspan=6, sticky='w', pady=(8, 0))
+        for t, v in (('Open folder when done', self.open_when_done), ('Skip scenes already rendered (up to date)', self.skip_done),
+                     ('Notify me when the queue ends', self.notify)):
+            ttk.Checkbutton(chk, text=tr(t), variable=v).pack(side='left', padx=(0, 18))
 
-        # options
-        op = ttk.LabelFrame(self, text=tr('Options'), padding=10); op.pack(fill='x', padx=P)
+        # ==== Settings page: render options, setup, language
+        sp = self.pages['settings']
+        op = ttk.LabelFrame(sp, text=tr('Options'), padding=10); op.pack(fill='x', padx=P, pady=(4, 10))
         rows = (('Quality', self.preset, list(rc.PRESETS)), ('Format', self.fmt, FORMAT_CHOICES), ('Sound', self.snd, SOUNDS),
                 ('Capture', self.capture, list(CAPTURES)), ('Blender', self.bl_engine, BLENDER_ENGINES))
         for r, (lbl, var, vals) in enumerate(rows):
@@ -738,31 +778,131 @@ class App(Root):
         ttk.Label(op, text=tr('Auto: songs -> Music, the rest -> Video (Short + video share one folder)'), foreground='#888').grid(row=6, column=2, sticky='w')
         ttk.Button(op, text=tr('New folder...'), command=self.add_main_folder).grid(row=6, column=3, sticky='e')
         op.columnconfigure(2, weight=1)
+        su = ttk.LabelFrame(sp, text=tr('Setup'), padding=10); su.pack(fill='x', padx=P, pady=(0, 10))
+        env = ttk.Frame(su); env.pack(fill='x')
+        self.env_lbls = {}
+        for key in ('Chrome', 'ffmpeg', 'playwright', 'Blender'):
+            dot = ttk.Label(env, text='●'); dot.pack(side='left'); txt = ttk.Label(env, text=key); txt.pack(side='left', padx=(3, 14))
+            self.env_lbls[key] = (dot, txt)
+        ttk.Button(env, text=tr('Install missing'), command=self.install_missing).pack(side='right')
+        self.selftest_btn = ttk.Button(env, text=tr('Self-test'), command=self.run_selftest); self.selftest_btn.pack(side='right')
+        ttk.Button(env, text=tr('Re-check'), command=self.check).pack(side='right', padx=6)
+        lg = ttk.LabelFrame(sp, text=tr('Language'), padding=10); lg.pack(fill='x', padx=P)
+        # 3.20 language: 'Auto' = Windows' language when Seekframe has it; a change asks to restart
+        self.lang_names = [tr('Auto (Windows)')] + list(i18n.LANGS.values())
+        self.lang_var = tk.StringVar(value=self.lang_names[0] if self.lang_choice == 'auto' else i18n.LANGS.get(self.lang_choice, 'English'))
+        self.lang_box = ttk.Combobox(lg, textvariable=self.lang_var, values=self.lang_names, state='readonly', width=24)
+        self.lang_box.pack(side='left'); self.lang_box.bind('<<ComboboxSelected>>', lambda e: self.on_language())
 
-        # progress
-        pr = ttk.Frame(self); pr.pack(fill='x', padx=P, pady=(12, 0))
-        self.bar = ttk.Progressbar(pr, maximum=100); self.bar.pack(side='left', fill='x', expand=True)
-        self.pct = ttk.Label(pr, text='0%', width=16, anchor='e'); self.pct.pack(side='right', padx=(10, 0))
-        sl = ttk.Frame(self); sl.pack(fill='x', padx=P, pady=(4, 0))
-        self.eta_lbl = ttk.Label(sl, text='', foreground='#888'); self.eta_lbl.pack(side='right')   # whole queue: about 12 min · done ~15:40
-        self.status = ttk.Label(sl, text=tr('Ready'), foreground='#888'); self.status.pack(side='left')
+        # ==== About page
+        ap = self.pages['about']
+        box = ttk.Frame(ap, padding=(P + 10, 20)); box.pack(fill='both', expand=True)
+        self.about_logo = None
+        try:
+            from PIL import Image
+            import base64, io
+            for b in (getattr(sys, '_MEIPASS', None), os.path.dirname(os.path.abspath(__file__))):
+                lp = b and os.path.join(b, 'assets', 'shadow.ico')
+                if lp and os.path.isfile(lp):
+                    with Image.open(lp) as im0: im = im0.convert('RGBA').resize((round(96 * k), round(96 * k)), Image.LANCZOS)
+                    buf = io.BytesIO(); im.save(buf, 'PNG')
+                    self.about_logo = tk.PhotoImage(master=self, data=base64.b64encode(buf.getvalue()).decode('ascii'), format='png'); break
+        except Exception:
+            log.exception('about logo')
+        head = ttk.Frame(box); head.pack(fill='x')
+        if self.about_logo: ttk.Label(head, image=self.about_logo).pack(side='left', padx=(0, 16))
+        hd2 = ttk.Frame(head); hd2.pack(side='left', fill='x')
+        ttk.Label(hd2, text='Seekframe', font='SunValleyTitleLargeFont').pack(anchor='w')
+        ttk.Label(hd2, text=tr('Version {0}', rc.VERSION), foreground='#888').pack(anchor='w')
+        ttk.Label(hd2, text=tr('by Shadow Studio')).pack(anchor='w')
+        wl = round(620 * k)
+        ttk.Label(box, text=tr('A free, open-source app that turns code-made scenes (HTML and Blender) into finished videos for YouTube and Shorts, with a quality check on every video.'),
+                  wraplength=wl, justify='left').pack(anchor='w', pady=(18, 4))
+        ttk.Label(box, text=tr('Seekframe was called Shadow until version 3.24.'), foreground='#888').pack(anchor='w')
+        lk = ttk.Frame(box); lk.pack(anchor='w', pady=(16, 0))
+        base = f'https://github.com/{updater.REPO}'
+        for i, (t, url) in enumerate((('GitHub page', base), ('User guide', base + '/blob/main/docs/GUIDE.md'),
+                                      ("What's new", base + '/blob/main/CHANGELOG.md'), ('Report a problem', base + '/issues/new/choose'),
+                                      ('Privacy policy', base + '/blob/main/docs/PRIVACY.md'), ('Shadow Studio', 'https://github.com/' + updater.REPO.split('/')[0]))):
+            ttk.Button(lk, text=tr(t), command=lambda u=url: webbrowser.open(u)).grid(row=i // 3, column=i % 3, sticky='we', padx=(0, 8), pady=(0, 8))
+        ttk.Button(box, text=tr('Check for updates'), command=self.on_update_btn).pack(anchor='w', pady=(8, 0))
+        ttk.Label(box, text=tr('MIT license. Made with Python, Playwright, ffmpeg and sv-ttk; the AI features use your own Claude Code.'),
+                  foreground='#888', wraplength=wl, justify='left').pack(anchor='w', pady=(18, 0))
 
-        # actions
-        act = ttk.Frame(self); act.pack(fill='x', padx=P, pady=P)
-        self.go = ttk.Button(act, text=tr('Render'), style='Accent.TButton', command=self.start)
-        self.stop_cur = ttk.Button(act, text=tr('Cancel current'), command=self.do_cancel_current, state='disabled')
-        self.stop = ttk.Button(act, text=tr('Stop queue'), command=self.do_cancel, state='disabled')
-        self.yt_btn = ttk.Button(act, text=tr('YouTube...'), command=self.open_youtube_dialog)
-        for i, w in enumerate((self.go, self.stop_cur, self.stop, ttk.Button(act, text=tr('Open folder'), command=self.open_out), ttk.Button(act, text=tr('Open log'), command=self.open_log), self.yt_btn)):
-            w.grid(row=0, column=i, sticky='we', padx=(0 if i == 0 else 6, 0)); act.columnconfigure(i, weight=1, uniform='a')
-        chk = ttk.Frame(act); chk.grid(row=1, column=0, columnspan=6, sticky='w', pady=(8, 0))
-        for t, v in (('Open folder when done', self.open_when_done), ('Skip scenes already rendered (up to date)', self.skip_done),
-                     ('Notify me when the queue ends', self.notify)):
-            ttk.Checkbutton(chk, text=tr(t), variable=v).pack(side='left', padx=(0, 18))
         self.skip_done.trace_add('write', lambda *_: self.update_eta())
         for var in (self.preset, self.capture):
             var.trace_add('write', lambda *_: self.update_eta())
+        for var in (self.preset, self.fmt, self.snd, self.capture, self.folder_choice):
+            var.trace_add('write', lambda *_: self._opt_line())
+        self._opt_line()
+        self.page = None; self.show_page('queue')
+        self.side_colors()
+        if not self.side_open: self.side.pack_forget()
         self.build_assistant()
+
+    def _nav_item(self, key, text, cmd, side='top'):
+        """One row of the sidebar: an icon (Windows' icon font) and its label; the whole row is clickable."""
+        row = tk.Frame(self.side, cursor='hand2'); row.pack(side=side, fill='x', padx=8, pady=1)
+        ic = tk.Label(row, text=self.NAV_ICONS.get(key, '') if self.icon_font else '', width=2,
+                      font=(self.icon_font, 11) if self.icon_font else None, anchor='center')
+        ic.pack(side='left', padx=(8, 6), pady=7)
+        lb = tk.Label(row, text=text, anchor='w', font='SunValleyBodyFont'); lb.pack(side='left', fill='x', expand=True, pady=7)
+        row.parts = (row, ic, lb); row.key = key; row.cget_text = text
+        for w in row.parts:
+            w.bind('<Button-1>', lambda e: cmd()); w.bind('<Enter>', lambda e, r=row: self._nav_hover(r, True))
+            w.bind('<Leave>', lambda e, r=row: self._nav_hover(r, False))
+        row.invoke = cmd
+        self.nav[key] = row
+        return row
+
+    def _nav_selected(self, key):
+        return key == self.page or (key == 'assistant' and self.ai_open)
+
+    def _nav_hover(self, row, on):
+        c = self.SIDE_COLORS['dark' if self.theme == 'dark' else 'light']
+        bg = c['sel'] if self._nav_selected(row.key) else (c['hover'] if on else c['bg'])
+        for w in row.parts: w.config(background=bg)
+
+    def side_colors(self):
+        """Paint the sidebar for the current theme (a plain Tk frame: sv-ttk does not colour it)."""
+        if not hasattr(self, 'side'): return
+        c = self.SIDE_COLORS['dark' if self.theme == 'dark' else 'light']
+        self.side.config(background=c['bg'])
+        for w in self.side.winfo_children():
+            if isinstance(w, tk.Frame) and not hasattr(w, 'key'):
+                w.config(background=c['bg'])
+                for x in w.winfo_children(): x.config(background=c['bg'])
+        self.side_title.config(foreground=c['fg_sel']); self.side_ver.config(foreground=c['muted'])
+        for row in self.nav.values():
+            sel = self._nav_selected(row.key); bg = c['sel'] if sel else c['bg']
+            for w in row.parts: w.config(background=bg)
+            row.parts[1].config(foreground=c['fg_sel'] if sel else c['muted']); row.parts[2].config(foreground=c['fg_sel'] if sel else c['fg'])
+
+    def show_page(self, name):
+        """Queue / Settings / About in the page area; the sidebar marks the open one."""
+        if name not in self.pages: return
+        if self.page == name and self.pages[name].winfo_manager(): return
+        for n, f in self.pages.items():
+            if n != name: f.pack_forget()
+        self.pages[name].pack(fill='both', expand=True)
+        self.page = name
+        self.page_title.config(text=tr({'queue': 'Queue', 'settings': 'Settings', 'about': 'About'}[name]))
+        self.side_colors()
+
+    def toggle_sidebar(self):
+        """The menu button: hide or show the sidebar (remembered in the settings)."""
+        self.side_open = not self.side_open
+        if self.side_open: self.side.pack(side='left', fill='y', before=self.body)
+        else: self.side.pack_forget()
+        self.save()
+
+    def _opt_line(self):
+        """The Queue page's one-line summary of the render options (a click opens Settings)."""
+        try:
+            parts = [tr(self.preset.get()), tr(self.fmt.get()), tr(self.snd.get()), tr(self.capture.get())]
+            self.opt_line.config(text='  ·  '.join(parts) + '   ›')
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------ theme
     def apply_theme(self, refresh=False):
@@ -776,6 +916,7 @@ class App(Root):
                 self.configure(background=LIGHT_BG if self.theme == 'light' else (str(ttk.Style(self).lookup('TFrame', 'background')) or '#1c1c1c'))
                 self._scale_theme()
                 i18n.apply_fonts(self)   # 3.20: a Windows font that has the language's letters (Arabic, Hindi, Chinese, Japanese)
+                self.side_colors()
             except Exception: log.exception('theme')
         dark_titlebar(self, self.theme == 'dark')
     def _light_gray(self):
@@ -831,6 +972,8 @@ class App(Root):
             dot, txt = self.env_lbls[k]
             dot.config(foreground='#3fb950' if ok else '#f85149' if k != 'Blender' else '#888'); txt.config(text=k if ok else f'{k} (missing)' if k != 'Blender' else 'Blender (not found, only for .blend)')
         if e['chrome'] and e.get('browser') != 'Chrome': self.env_lbls['Chrome'][1].config(text=tr('{0} (Chrome not found)', e['browser']))
+        miss = [n for n, ok in (('Chrome', e['chrome']), ('ffmpeg', e['ffmpeg']), ('playwright', e['playwright'])) if not ok]
+        if miss and hasattr(self, 'status'): self.status.config(text=tr('Missing: {0}. Open Settings to install.', ', '.join(miss)))   # the setup moved to Settings
     def run_selftest(self, wait=False, **kw):
         """Self-test button: selftest() in a thread, the result in a message box (tests: wait=True runs here, returns it)."""
         if self.worker is not None and self.worker.is_alive():
@@ -1122,7 +1265,7 @@ class App(Root):
         save_cfg({'out': self.out_dir.get(), 'preset': self.preset.get(), 'open': self.open_when_done.get(), 'format': self.fmt.get(),
                   'skip_done': self.skip_done.get(), 'notify': self.notify.get(),
                   'folder': self.folder_choice.get(), 'folders': self.folders,
-                  'assistant_open': self.ai_open, 'assistant_dir': self.ai_dir_choice, 'ai': getattr(self, 'cfg_ai', {}),
+                  'assistant_open': self.ai_open, 'assistant_dir': self.ai_dir_choice, 'sidebar': getattr(self, 'side_open', True), 'ai': getattr(self, 'cfg_ai', {}),
                   'language': getattr(self, 'lang_choice', 'auto'),
                   'capture': self.capture.get(), 'blender_engine': self.bl_engine.get(), 'sound': self.snd.get(), 'sound_file': self.snd_file.get(), **({'theme': self.theme_choice} if self.theme_choice else {})})
     def on_close(self):
@@ -1411,14 +1554,14 @@ class App(Root):
         self.update_idletasks(); w0 = self.winfo_width()
         if self.ai_open:
             self._ai_dir_label()
-            self.ai_frame.pack(side='right', fill='both', padx=(0, 14), pady=14, before=self._top)
+            self.ai_frame.pack(side='right', fill='both', padx=(0, 14), pady=14, before=self.body)
             self.update_idletasks(); add = self.ai_frame.winfo_reqwidth() + 14
             self.geometry(f'{w0 + add}x{self.winfo_height()}'); self.ai_in.focus_set()
         else:
             add = self.ai_frame.winfo_width() + 14
             self.ai_frame.pack_forget()
             self.geometry(f'{max(w0 - add, self.winfo_reqwidth())}x{self.winfo_height()}')
-        self.ai_btn.config(style='Accent.TButton' if self.ai_open else 'TButton')
+        self.side_colors()   # the Assistant row is marked while the panel is open
         self.save()
 
     def ai_folder(self):

@@ -237,5 +237,22 @@
  "narration": "ナレーション",
  "scene sound (no file)": "シーンの音(ファイルなし)",
  "scene sound": "シーンの音",
- "silent": "無音"
+ "silent": "無音",
+ "Queue": "キュー",
+ "New video": "新しい動画",
+ "AI tools": "AI ツール",
+ "Settings": "設定",
+ "About": "このアプリについて",
+ "Version {0}": "バージョン {0}",
+ "by Shadow Studio": "Shadow Studio 制作",
+ "A free, open-source app that turns code-made scenes (HTML and Blender) into finished videos for YouTube and Shorts, with a quality check on every video.": "コードで作ったシーン(HTML と Blender)を YouTube やショート向けの完成動画にする、無料のオープンソースアプリ。すべての動画を品質チェックします。",
+ "Seekframe was called Shadow until version 3.24.": "Seekframe はバージョン 3.24 まで Shadow という名前でした。",
+ "GitHub page": "GitHub ページ",
+ "User guide": "ユーザーガイド",
+ "What's new": "新機能",
+ "Report a problem": "問題を報告",
+ "Privacy policy": "プライバシーポリシー",
+ "Shadow Studio": "Shadow Studio",
+ "MIT license. Made with Python, Playwright, ffmpeg and sv-ttk; the AI features use your own Claude Code.": "MIT ライセンス。Python、Playwright、ffmpeg、sv-ttk で作られています。AI 機能はご自身の Claude Code を使います。",
+ "Missing: {0}. Open Settings to install.": "不足: {0}。設定を開いてインストールしてください。"
 }

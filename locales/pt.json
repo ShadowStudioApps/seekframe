@@ -237,5 +237,22 @@
  "narration": "narração",
  "scene sound (no file)": "som da cena (sem arquivo)",
  "scene sound": "som da cena",
- "silent": "mudo"
+ "silent": "mudo",
+ "Queue": "Fila",
+ "New video": "Novo vídeo",
+ "AI tools": "Ferramentas de IA",
+ "Settings": "Configurações",
+ "About": "Sobre",
+ "Version {0}": "Versão {0}",
+ "by Shadow Studio": "por Shadow Studio",
+ "A free, open-source app that turns code-made scenes (HTML and Blender) into finished videos for YouTube and Shorts, with a quality check on every video.": "Um app gratuito e de código aberto que transforma cenas feitas com código (HTML e Blender) em vídeos prontos para o YouTube e Shorts, com controle de qualidade em cada vídeo.",
+ "Seekframe was called Shadow until version 3.24.": "O Seekframe se chamava Shadow até a versão 3.24.",
+ "GitHub page": "Página no GitHub",
+ "User guide": "Guia de uso",
+ "What's new": "Novidades",
+ "Report a problem": "Relatar um problema",
+ "Privacy policy": "Política de privacidade",
+ "Shadow Studio": "Shadow Studio",
+ "MIT license. Made with Python, Playwright, ffmpeg and sv-ttk; the AI features use your own Claude Code.": "Licença MIT. Feito com Python, Playwright, ffmpeg e sv-ttk; os recursos de IA usam o seu próprio Claude Code.",
+ "Missing: {0}. Open Settings to install.": "Faltando: {0}. Abra as Configurações para instalar."
 }

@@ -52,18 +52,19 @@ Only what you read changes: settings, projects, file names and the log stay the 
 
 ## The window
 
-**Top bar**
+The window has a **sidebar** on the left and the open page on the right. The ☰ button at the top hides or shows the
+sidebar (Seekframe remembers it).
 
-| Item | What it does |
-|---|---|
-| **Check for updates** | Asks GitHub for a newer version (see above). Becomes **Update to vX.Y** when there is one. |
-| **Light / Dark** | Switches the theme. Seekframe follows Windows until you press it, then remembers your choice. |
-| **Assistant** | Opens the chat panel on the right (see [Assistant panel](#assistant-panel-and-claude)). |
-| **Project** | *Open project...*, *Save project*, *Save project as...* (see [Projects](#projects)). |
-| **Chrome · ffmpeg · playwright · Blender** | Green = found, red = missing. Blender is only needed for `.blend` files. Without Chrome it says *Edge (Chrome not found)* and renders with Edge. |
-| **Re-check** | Looks again (for example after installing ffmpeg). |
-| **Self-test** | Renders a 2-second test video with a tone and checks it (browser, ffmpeg, frames, sound, quality check); the message says which step failed and what to install. |
-| **Install missing** | Installs what is missing with winget in a new window. Restart Seekframe afterwards. |
+- **Queue**: your scenes, the Render buttons and the progress. The grey line under the table sums up the render options;
+  click it to change them.
+- **New video**, **AI tools**, **YouTube...**, **Project** and **Assistant** open those windows or menus.
+- **Settings** (bottom): quality, format, sound, capture, Blender, where to save, the setup check (Chrome, ffmpeg,
+  Playwright, Blender) with *Install missing* and *Self-test*, and the language.
+- **About** (bottom, picture below): the version, Shadow Studio, and links to the GitHub page, this guide, what's new, the privacy
+  policy and *Report a problem*.
+- **Check for updates** is at the bottom of the sidebar; it becomes *Update to vX.Y* when a new version is out.
+
+<img src="screenshot_about.png" alt="The About page" width="80%">
 
 ## The scenes table
 

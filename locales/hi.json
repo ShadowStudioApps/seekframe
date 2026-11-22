@@ -237,5 +237,22 @@
  "narration": "वर्णन",
  "scene sound (no file)": "दृश्य की आवाज़ (फ़ाइल नहीं)",
  "scene sound": "दृश्य की आवाज़",
- "silent": "बिना आवाज़"
+ "silent": "बिना आवाज़",
+ "Queue": "कतार",
+ "New video": "नया वीडियो",
+ "AI tools": "AI टूल",
+ "Settings": "सेटिंग्स",
+ "About": "परिचय",
+ "Version {0}": "संस्करण {0}",
+ "by Shadow Studio": "Shadow Studio द्वारा",
+ "A free, open-source app that turns code-made scenes (HTML and Blender) into finished videos for YouTube and Shorts, with a quality check on every video.": "एक मुफ़्त, ओपन-सोर्स ऐप जो कोड से बने दृश्यों (HTML और Blender) को YouTube और Shorts के लिए तैयार वीडियो में बदलता है, हर वीडियो की गुणवत्ता जाँच के साथ।",
+ "Seekframe was called Shadow until version 3.24.": "संस्करण 3.24 तक Seekframe का नाम Shadow था।",
+ "GitHub page": "GitHub पेज",
+ "User guide": "उपयोग गाइड",
+ "What's new": "नया क्या है",
+ "Report a problem": "समस्या बताएँ",
+ "Privacy policy": "गोपनीयता नीति",
+ "Shadow Studio": "Shadow Studio",
+ "MIT license. Made with Python, Playwright, ffmpeg and sv-ttk; the AI features use your own Claude Code.": "MIT लाइसेंस। Python, Playwright, ffmpeg और sv-ttk से बना; AI सुविधाएँ आपका अपना Claude Code इस्तेमाल करती हैं।",
+ "Missing: {0}. Open Settings to install.": "नहीं है: {0}। इंस्टॉल करने के लिए सेटिंग्स खोलें।"
 }
